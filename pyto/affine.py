@@ -116,9 +116,9 @@ class Affine(object):
         self.xy_axes = xy_axes
         self.gl = gl
         self.d = d
-        if (d is None) or (isinstance(d, numpy.int) and (d == 0)): 
+        if (d is None) or (isinstance(d, numpy.uint8) and (d == 0)): 
             if (self.gl is not None):
-                self.d = numpy.zeros(gl.shape[0], dtype='int')
+                self.d = numpy.zeros(gl.shape[0], dtype=numpy.uint8)
 
         # initialize order
         self.order = order

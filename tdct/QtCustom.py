@@ -46,8 +46,8 @@ style.use('fivethirtyeight')
 
 # Suppress deprecation warning from add_subplot() method
 import warnings
-from matplotlib.cbook.deprecation import MatplotlibDeprecationWarning
-warnings.filterwarnings('ignore', category=MatplotlibDeprecationWarning)
+# from matplotlib.cbook.deprecation import MatplotlibDeprecationWarning
+# warnings.filterwarnings('ignore', category=MatplotlibDeprecationWarning)
 
 ##############################
 # QTableViewCustom
