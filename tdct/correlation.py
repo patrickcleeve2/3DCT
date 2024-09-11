@@ -246,7 +246,35 @@ def write_results(
 ########## Main ##################################################################
 ##################################################################################
 
-def main(markers_3d,markers_2d,spots_3d,rotation_center,results_file,imageProps=None):
+# TODO: refactor this function, and split it into smaller components that can be re-used
+
+def main(
+    markers_3d: np.ndarray[float],
+    markers_2d: np.ndarray[float],
+    spots_3d: np.ndarray[float],
+    rotation_center: list[float],
+    results_file: str,
+    imageProps: list = None,
+) -> list:
+    """
+    Establishes correlation between 3D and 2D markers and correlates spots between 3D and 2D
+    markers_3d: array of correlation marker positions for 3D image
+    markers_2d: array of correlation marker positions for 2D image
+    spots_3d: array of points of interest for 3D image
+    rotation_center: center of rotation for the 3D image (x,y,z)
+    results_file: file name for the results
+    imageProps: properties of the images
+        ([2d_image_shape, 2d_image_pixel_size_um, 3d_image_shape])
+
+    Returns:
+        list: [transf, transf_3d, spots_2d, delta2D, cm_3D_markers, modified_translation]
+        transf: transformation object
+        transf_3d: transformed 3D marker positions
+        spots_2d: correlated spots in 2D image
+        delta2D: delta between transformed 3D marker positions and 2D marker positions
+        cm_3D_markers: center of mass of 3D markers
+        modified_translation: modified translation (rotation center not at 0,0,0)
+    """
 
     random_rotations = True
     rotation_init = 'gl2'
@@ -258,9 +286,19 @@ def main(markers_3d,markers_2d,spots_3d,rotation_center,results_file,imageProps=
 
     # read fluo markers
     mark_3d = markers_3d[list(range(markers_3d.shape[0]))].transpose()
+    # mark_3d = markers_3d.T # equivalent
+
+    assert markers_3d.shape[1] == 3, "Markers 3D do not have 3 dimensions"
+    assert mark_3d.shape[0] == 3, "Markers 3D are not transposed correctly"
+    assert np.array_equal(mark_3d, markers_3d.T), "Markers 3D are not transposed correctly"
+
 
     # read ib markers
     mark_2d = markers_2d[list(range(markers_2d.shape[0]))][:,:2].transpose()
+    # mark_2d = markers_2d[:,:2].T # equivalent
+
+    assert mark_2d.shape[0] == 2, "Markers 2D do not have 2 dimensions"
+    assert np.array_equal(mark_2d, markers_2d[:,:2].T), "Markers 2D are not transposed correctly"
 
     # convert Eulers in degrees to Caley-Klein params
     if (rotation_init is not None) and (rotation_init != 'gl2'):
