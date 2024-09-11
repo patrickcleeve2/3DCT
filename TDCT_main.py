@@ -73,8 +73,8 @@ from subprocess import call
 from PyQt5 import QtCore, QtGui, QtWidgets, uic
 from tdct import clrmsg, TDCT_debug, helpdoc, stackProcessing
 import TDCT_correlation
-from tools3dct.project_fluo import fluo_project_GUI
-from tools3dct.create_mask import create_mask_GUI
+from tdct.tools3dct.project_fluo import fluo_project_GUI
+from tdct.tools3dct.create_mask import create_mask_GUI
 # add working directory temporarily to PYTHONPATH
 if getattr(sys, 'frozen', False):
     # program runs in a bundle (pyinstaller)
@@ -726,6 +726,16 @@ class GenericThread(QtCore.QThread):
 ########## Executed when running in standalone ###################################
 ##################################################################################
 
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+
+    app = QtWidgets.QApplication(argv)
+    window = APP()
+    window.show()
+    window.raise_()
+    sys.exit(app.exec_())
+
 if __name__ == "__main__":
     if debug is True:
         print(clrmsg.DEBUG + 'Debug active')
@@ -733,8 +743,4 @@ if __name__ == "__main__":
         print(clrmsg.INFO + 'This is 3D Correlation Toolbox', __version__)
         print(clrmsg.WARNING + 'Debug mode can/will slow down parts of the Toolbox (e.g. marker clicking)')
 
-    app = QtWidgets.QApplication(sys.argv)
-    window = APP()
-    window.show()
-    window.raise_()
-    sys.exit(app.exec_())
+    main(argv=sys.argv)

@@ -37,8 +37,8 @@ import qimage2ndarray
 ## Colored stdout, custom Qt functions (mostly to handle events), CSV handler
 ## and correlation algorithm
 from tdct import clrmsg, TDCT_debug, QtCustom, csvHandler, correlation
-from tools3dct.find_beads import find_beads_GUI
-from tools3dct.predict_FIB import predict_FIB_GUI
+from tdct.tools3dct.find_beads import find_beads_GUI
+from tdct.tools3dct.predict_FIB import predict_FIB_GUI
 
 __version__ = 'v3.0.0'
 
@@ -2258,15 +2258,9 @@ class Main():
             if debug is True: print(clrmsg.DEBUG + str(e))
 
 
-if __name__ == "__main__":
-    if debug is True:
-        print(clrmsg.DEBUG + 'Debug Test')
-        print(clrmsg.OK + 'OK Test')
-        print(clrmsg.ERROR + 'Error Test')
-        print(clrmsg.INFO + 'Info Test')
-        print(clrmsg.INFO + 'Info Test')
-        print(clrmsg.WARNING + 'Warning Test')
-        print('='*20, 'Initializing', '='*20)
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
 
     app = QtWidgets.QApplication(sys.argv)
 
@@ -2285,3 +2279,15 @@ if __name__ == "__main__":
     main = Main(leftImage=left,rightImage=right)
 
     sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    if debug is True:
+        print(clrmsg.DEBUG + 'Debug Test')
+        print(clrmsg.OK + 'OK Test')
+        print(clrmsg.ERROR + 'Error Test')
+        print(clrmsg.INFO + 'Info Test')
+        print(clrmsg.INFO + 'Info Test')
+        print(clrmsg.WARNING + 'Warning Test')
+        print('='*20, 'Initializing', '='*20)
+
+    main(sys.argv)
