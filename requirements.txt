@@ -1,0 +1,13 @@
+numpy==2.0.1
+scipy==1.13.1
+matplotlib==3.9.1
+opencv-python-headless==4.10.0.84
+scikit-image==0.24.0
+tifffile==2024.7.24
+colorama==0.4.6
+qimage2ndarray==1.10.0
+PyQt5==5.15.11
+napari>=0.5.1
+
+# github dependencies
+# tools3dct @ git+https://github.com/hermankhfung/tools3dct.git#egg=tools3dct

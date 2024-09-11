@@ -249,3 +249,7 @@ spec/
 __init__.py
 # test/
 .cache/
+
+*.egg-info/*
+
+3D_correlation_test_dataset/*
