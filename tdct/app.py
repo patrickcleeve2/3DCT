@@ -14,7 +14,8 @@ from PIL import Image
 from PyQt5 import QtWidgets
 
 from tdct import correlation
-from tdct.beadPos import getzGauss
+# from tdct.beadPos import getzGauss
+from tdct.util import get_z_gauss
 from tdct.ui.qt import tdct_main
 
 logging.basicConfig(level=logging.INFO)
@@ -1080,8 +1081,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
             try:
                 # getzGauss can fail, so we need to catch the exception
-                z = getzGauss(x=x, y=y, img=self.fm_image)  # threshVal, cutout
-                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
+                # z = getzGauss(x=x, y=y, img=self.fm_image)  # threshVal, cutout
+                z2 = get_z_gauss(image=self.fm_image, x=x, y=y)
+                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}, z2: {z2}")
             except RuntimeError as e:
                 logging.error(f"Error in z-gauss optimisation: {e}")
                 # show a warning to the user
