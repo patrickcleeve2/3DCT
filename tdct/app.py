@@ -1082,8 +1082,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             try:
                 # getzGauss can fail, so we need to catch the exception
                 # z = getzGauss(x=x, y=y, img=self.fm_image)  # threshVal, cutout
-                z2 = get_z_gauss(image=self.fm_image, x=x, y=y)
-                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}, z2: {z2}")
+                zval, z, _ = get_z_gauss(image=self.fm_image, x=x, y=y)
+                # TODO: multi-channel support
+                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
             except RuntimeError as e:
                 logging.error(f"Error in z-gauss optimisation: {e}")
                 # show a warning to the user
