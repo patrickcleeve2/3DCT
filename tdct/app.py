@@ -139,7 +139,7 @@ def save_correlation_data(data: dict, path: str) -> None:
 def parse_metadata(filename: str) -> np.ndarray:
     """parse metadata from a tfs tiff file"""
     # TODO: replace this with real parser versions eventually
-    md = None
+    md = {}
     with tff.TiffFile(filename) as tif:
         for page in tif.pages:
             for tag in page.tags.values():
@@ -229,6 +229,12 @@ USER_PREFERENCES = {
     "use_z_gauss_optim": True,
     "use_mip": False,
 }
+
+FILE_FILTERS = (
+    "TIFF files (*.tif *.tiff);;"+
+    "OME-TIFF files (*.ome.tiff *.ome.tif);;"
+)
+        
 
 TEXT_PROPERTIES = {
     "string": "idx",  # dataframe column
@@ -558,7 +564,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             self,
             caption="Open FIB Image",
             directory=self.path,
-            filter="Tiff Files (*.tif)",
+            filter=FILE_FILTERS,
         )
         if not filename:
             return
@@ -600,14 +606,19 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self._show_project_controls()
 
     def _set_fm_image_path(self):
+        
+
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             caption="Open FM Image",
             directory=self.path,
-            filter="Tiff Files (*.tif)",
+            filter=FILE_FILTERS,
         )
         if not filename:
             return
+
+        # TODO: add support for multi-channel images?
+        # convert to CZYX for fm? to make things simpler?
 
         # load the fm image, set the data
         try:
@@ -615,6 +626,10 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         except Exception as e:
             logging.error(f"Error loading FM Image: {e}")
             return
+
+        if self.fm_image.ndim == 3:
+            # add a channel dimension 
+            self.fm_image = np.expand_dims(self.fm_image, axis=0)
 
         # rotation center is the centre of the image volume
         halfmax_dim = int(max(self.fm_image.shape) * 0.5)
@@ -635,7 +650,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # apply translation to fm image
         if self.translation is not None:
-            self.fm_image_layer.translate = [0, 0, self.translation]
+            self.fm_image_layer.translate = [0, 0, 0, self.translation]
 
         self._show_project_controls()  # TODO: change this to a callback on the data layer?
 
@@ -684,7 +699,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         z_dim = 2
         if show_thick_dims:
-            z_dim = self.fm_image.shape[0] * 2 if self.fm_image is not None else 500
+            z_dim = self.fm_image.shape[1] * 2 if self.fm_image is not None else 500
         self.viewer.dims.thickness = (z_dim, 1, 1)
 
     def toggle_mip(self):
@@ -693,7 +708,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # toggle mip
         if self.use_mip:
-            self.fm_image_layer.data = np.amax(self.fm_image, axis=0)
+            self.fm_image_layer.data = np.amax(self.fm_image, axis=1)
         else:
             self.fm_image_layer.data = self.fm_image
 
@@ -841,7 +856,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         logging.info(f"FM Coordinates: {fm_coords}")
         logging.info(f"POI Coordinates: {poi_coords}")
 
-        fm_image = self.fm_image
+        fm_image = self.fm_image[0]  # only use the first channel (for shape, assume all are the same?)
         fib_image = self.fib_image
         fib_pixel_size = self.fib_pixel_size
         rotation_center = self.rotation_center
@@ -1007,6 +1022,13 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                     extent_min = target_layer.extent.data[0]  # (z, y, x)
                     extent_max = target_layer.extent.data[1]
 
+                    # if they are 4d, remove the first dimension
+                    if len(coords) == 4:
+                        logging.warning(f"4D coordinates detected: {coords}, removing first dimension")
+                        coords = coords[1:]
+                        extent_min = extent_min[1:]
+                        extent_max = extent_max[1:]
+
                     # convert the above logs into a json msg
                     msgd = {
                         "target_layer": target_layer.name,
@@ -1015,7 +1037,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                         "extent_min": extent_min,
                         "extent_max": extent_max,
                     }
-                    logging.debug(msgd)
+                    logging.info(msgd)
 
                     for i, coord in enumerate(coords):
                         if coord < extent_min[i] or coord > extent_max[i]:
@@ -1062,6 +1084,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         if len(position) == 2:
             position = [0, position[0], position[1]]
 
+        if len(position) == 4:
+            position = position[1:]
+
         # _map the point to the coordinates layer
         clayer_props = COORDINATE_LAYER_PROPERTIES["coordinates"]
         color = clayer_props[layer]["color"]
@@ -1080,10 +1105,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
             try:
                 # getzGauss can fail, so we need to catch the exception
-                # z = getzGauss(x=x, y=y, img=self.fm_image)  # threshVal, cutout
-                # zval, z, _ = get_z_gauss(image=self.fm_image, x=x, y=y)
-                # TODO: multi-channel support
-                zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y)
+                zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
                 logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
             except RuntimeError as e:
                 logging.error(f"Error in z-gauss optimisation: {e}")
@@ -1221,7 +1243,10 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         """
         if self.reprojection_layer is not None:
-            self.viewer.layers.remove(self.reprojection_layer)
+            try:
+                self.viewer.layers.remove(self.reprojection_layer)
+            except ValueError as e:
+                logging.error(f"Error removing reprojection layer: {e}")
             self.reprojection_layer = None
 
         if reprojected_points is None:
@@ -1370,14 +1395,15 @@ def run_correlation(
         "metadata": {
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
             "data_path": path,
-            "csv_path": "",
-            "project_path": "",
+            "csv_path": os.path.join(path, "data.csv"),
+            "project_path": path, # TODO: add project path
         },
         "correlation": correlation_data,
     }
     save_correlation_data(full_correlation_data, path)
 
     return correlation_data
+# TODO: replace this with correlation.correlate, and save results?
 
 
 # TODO:
@@ -1392,8 +1418,6 @@ def run_correlation(
 # functionalise correlation code
 
 # add data tools: reslice (iterpolate), set pixel size, set origin, set rotation
-
-
 # think about how to embed in autolamella with targetting
 
 # display the transformation matrix

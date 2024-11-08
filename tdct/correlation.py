@@ -378,7 +378,7 @@ def correlate(
     rotation_center: list[float],
     imageProps: list = None,
     optimiser_params: dict = DEFAULT_OPTIMIZATION_PARAMETERS
-) -> list:
+) -> dict:
     """
     Iteratively calculate the correlation between 3D and 2D markers and reproject the points of interest (POI) into the 2D image
 
