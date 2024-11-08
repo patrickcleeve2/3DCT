@@ -713,7 +713,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         # toggle mip
         for i, layer in enumerate(self.fm_image_layers):
             if self.use_mip:
-                layer.data = np.amax(self.fm_image[i], axis=1) # TODO: faster/better way to do this?
+                layer.data = np.amax(self.fm_image[i], axis=0) # TODO: faster/better way to do this?
             else:
                 layer.data = self.fm_image[i]
 
