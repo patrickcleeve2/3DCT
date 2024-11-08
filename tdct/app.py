@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 from pprint import pprint
+from typing import List
 
 import napari
 import numpy as np
@@ -375,7 +376,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         self.translation = None
         self.fib_image_layer = None
-        self.fm_image_layer = None
+        self.fm_image_layers: List = []
         self.selected_index = []
 
         self.rotation_center: tuple = None
@@ -601,8 +602,8 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # apply translation to fm image
         if self.fm_image is not None:
-            self.fm_image_layer.translate = [0, 0, self.translation]
-
+            for layer in self.fm_image_layers:
+                layer.translate = [0, 0, self.translation]
         self._show_project_controls()
 
     def _set_fm_image_path(self):
@@ -643,14 +644,17 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.spinBox_parameters_rotation_center_x.setValue(halfmax_dim)
         self.spinBox_parameters_rotation_center_y.setValue(halfmax_dim)
 
-        self.fm_image_layer = self._add_image_layer(
-            self.fm_image, self.fm_image_layer, "FM Image"
-        )
+        # add each channel as a separate layer
+        for i, channel in enumerate(self.fm_image):
+            layer = self._add_image_layer(channel, None, f"FM Image Channel {i+1}")
+            self.fm_image_layers.append(layer)
+
         self.lineEdit_fm_image_path.setText(filename)
 
         # apply translation to fm image
         if self.translation is not None:
-            self.fm_image_layer.translate = [0, 0, 0, self.translation]
+            for layer in self.fm_image_layers:
+                layer.translate = [0, 0, self.translation]
 
         self._show_project_controls()  # TODO: change this to a callback on the data layer?
 
@@ -707,10 +711,11 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.use_mip = not self.use_mip
 
         # toggle mip
-        if self.use_mip:
-            self.fm_image_layer.data = np.amax(self.fm_image, axis=1)
-        else:
-            self.fm_image_layer.data = self.fm_image
+        for i, layer in enumerate(self.fm_image_layers):
+            if self.use_mip:
+                layer.data = np.amax(self.fm_image[i], axis=1) # TODO: faster/better way to do this?
+            else:
+                layer.data = self.fm_image[i]
 
     def load_coordinates(self):
         fib_coord_filename, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1011,7 +1016,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             logging.info("No images loaded")
             return
 
-        target_layers = [self.fm_image_layer, self.fib_image_layer]
+        target_layers = [layer for layer in self.fm_image_layers] + [self.fib_image_layer]
 
         def check_coordinates_inside_layer(event, target_layers: list):
             for target_layer in target_layers:
@@ -1071,10 +1076,10 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             if target_layer == self.fib_image_layer:
                 self.add_point("FIB", position)
 
-            elif target_layer == self.fm_image_layer:
+            elif target_layer in self.fm_image_layers:
                 self.add_point("FM", position)
         elif "Control" in event.modifiers:
-            if target_layer == self.fm_image_layer:
+            if target_layer in self.fm_image_layers:
                 self.add_point("POI", position)
 
     def add_point(self, layer: str, position: list[float], from_file: bool = False):
