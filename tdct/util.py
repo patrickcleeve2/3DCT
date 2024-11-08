@@ -297,6 +297,7 @@ def multi_channel_interpolation(
     pixelsize_in: float,
     pixelsize_out: float,
     method: str = "fast-cubic",
+    parent_ui=None,
 ) -> np.ndarray:
     """Interpolate a multi-channel z-stack (CZYX) along the z-axis
     Args:
@@ -306,6 +307,9 @@ def multi_channel_interpolation(
     Returns:
         interpolated: 4D numpy array (CZYX) with adjusted z-axis resolution
     """
+    if parent_ui:
+        parent_ui.progress_update.emit({"value": 0, "max": image.shape[0]})
+
     # QUERY: how to speed up?
     ch_interpolated = []
     for i, channel in enumerate(image):
@@ -318,6 +322,8 @@ def multi_channel_interpolation(
                 method=method,
             )
         )
+        if parent_ui:
+            parent_ui.progress_update.emit({"value": i + 1, "max": image.shape[0]})
     return np.array(ch_interpolated)
 
 

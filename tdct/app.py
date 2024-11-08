@@ -3,7 +3,7 @@ import datetime
 import logging
 import os
 from pprint import pprint
-from typing import List
+from typing import Dict, List, Tuple
 
 import napari
 import numpy as np
@@ -11,12 +11,15 @@ import pandas as pd
 import tifffile as tff
 import yaml
 from napari.utils import notifications
+from ome_types import from_tiff
 from PIL import Image
 from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QDialog
 
 from tdct import correlation
-from tdct.util import multi_channel_get_z_guass
+from tdct.ui.fm_import_dialog import FluorescenceImportDialog
 from tdct.ui.qt import tdct_main
+from tdct.util import multi_channel_get_z_guass
 
 logging.basicConfig(level=logging.INFO)
 
@@ -217,6 +220,22 @@ def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
     # pprint(md)
 
     return image, pixel_size
+
+def _load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
+    image = tff.imread(path)
+
+    zstep, pixel_size, colours = None, None, []
+    try:
+        ome = from_tiff(path)
+        pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
+        zstep = ome.images[0].pixels.physical_size_z
+        colours = [channel.name for channel in ome.images[0].channels]
+    except Exception as e:
+        logging.debug(f"Failed to extract metadata: {e}")
+
+    return image, {"pixel_size": pixel_size, 
+                   "zstep": zstep, 
+                   "colours": colours}
 
 if not os.path.exists(PATH):
     PATH = __file__
@@ -618,12 +637,25 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         if not filename:
             return
 
-        # TODO: add support for multi-channel images?
-        # convert to CZYX for fm? to make things simpler?
-
         # load the fm image, set the data
         try:
-            self.fm_image = tff.imread(filename)
+            # self.fm_image = tff.imread(filename)
+
+            dialog = FluorescenceImportDialog(path=filename)
+            result = dialog.exec_()
+            
+            if result == QDialog.Accepted:
+                print("OK clicked")
+                image = dialog.image_interp
+            else:
+                print("Cancel clicked")
+                image = dialog.image
+
+            if image is None:
+                raise ValueError("No image data found")
+            
+            self.fm_image = image                
+
         except Exception as e:
             logging.error(f"Error loading FM Image: {e}")
             return
@@ -643,6 +675,11 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.spinBox_parameters_rotation_center_z.setValue(halfmax_dim)
         self.spinBox_parameters_rotation_center_x.setValue(halfmax_dim)
         self.spinBox_parameters_rotation_center_y.setValue(halfmax_dim)
+
+        # clear all fm image layers
+        for layer in self.fm_image_layers:
+            if layer in self.viewer.layers:
+                self.viewer.layers.remove(layer)
 
         # add each channel as a separate layer
         for i, channel in enumerate(self.fm_image):
