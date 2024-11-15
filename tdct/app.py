@@ -25,7 +25,7 @@ from tdct.ui.config import (
 )
 from tdct.ui.fm_import_dialog import FluorescenceImportDialog
 from tdct.util import multi_channel_get_z_guass
-
+from tdct.ui.pandas_table import PandasTableModel
 logging.basicConfig(level=logging.INFO)
 
 def set_table_properties(table):
@@ -39,7 +39,7 @@ def set_table_properties(table):
     # set min height to 200
     table.setMinimumHeight(200)
 
-from tdct.ui.test_table import PandasTableModel
+
 
 
 class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
@@ -542,6 +542,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
     def run_correlation(self):
         """Run the correlation between FIB and FM coordiantes."""
 
+        self.df = self.df.sort_values(by=["idx"]) # sort by index
+
+
         fib_coords = self.df[self.df["type"] == "FIB"][["x", "y", "z"]].values.astype(
             np.float32
         )
@@ -856,6 +859,8 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
     def _dataframe_updated(self):
         """"""
+        self.df = self.df.sort_values(by=["type", "idx"])
+        self.df.reset_index(drop=True, inplace=True)
         self._toggle_thick_dims()
         self._draw_points_to_layer()
         # self._display_coordinates_in_table()
@@ -867,7 +872,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self._show_project_controls()
 
     def setup_table_view(self):
-        self.model = PandasTableModel(self.df)
+
+
+        self.model = PandasTableModel(self.df, display_columns=["type", "idx", "x", "y", "z"])
         self.tableView_coordinates.setModel(self.model)
 
         # set minimum height to stretch the table
@@ -877,7 +884,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
     def on_data_changed(self, df):
         print(df)
-        self.df = df
+        self.df = df.reset_index(drop=True)
+        # reindex the dataframe
+        # self.df = self.df.reset_index(drop=True)
         self._dataframe_updated()
 
         # TODO: split into separate table views
@@ -900,8 +909,14 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         logging.debug("Showing Corresponding Points")
 
         # show the matching coordinates in the FIB - FM
-        fib_coords = self.df[self.df["type"] == "FIB"][["x", "y"]].values
-        fm_coords = self.df[self.df["type"] == "FM"][["x", "y", "translation"]].values
+
+        # TODO: show matching points based on idx, not order
+        # show the user a warning if there are unmatched points, or points with the same idx
+
+        df_sorted = self.df.sort_values(by=["type", "idx"])
+
+        fib_coords = df_sorted[df_sorted["type"] == "FIB"][["x", "y"]].values
+        fm_coords = df_sorted[df_sorted["type"] == "FM"][["x", "y", "translation"]].values
 
         # add the translation to the x coordinates (to account for the translation of the fm image)
         fm_coords[:, 0] += fm_coords[:, 2]
