@@ -216,6 +216,33 @@ def parse_correlation_result(cor_ret: list, input_data: dict) -> dict:
     return correlation_data
 
 
+def parse_correlation_result_v2(cor_ret: dict, input_data: dict) -> dict:
+    # point of interest data
+    spots_2d = cor_ret["output"]["reprojected_2d_poi"]  # (points of interest in 2D image)
+    fib_image_shape = input_data["image_properties"]["fib_image_shape"]
+    pixel_size_um = input_data["image_properties"]["fib_pixel_size_um"]
+
+    poi_image_coordinates = convert_poi_to_microscope_coordinates(
+        spots_2d, fib_image_shape, pixel_size_um
+    )
+
+    # transformation data
+    transf = cor_ret["output"]["transform"]     # transformation matrix
+    reproj_3d = cor_ret["output"]["reprojected_3d_coordinates"]  # reprojected 3D points to 2D points
+    delta_2d = cor_ret["output"]["reprojection_error"]   # difference between reprojected 3D points and 2D points (in pixels)
+    mod_translation = cor_ret["output"]["modified_translation"]  # translation around rotation center
+    transformation_data = extract_transformation_data(transf=transf, 
+                                                      mod_translation=mod_translation, 
+                                                      reproj_3d=reproj_3d, 
+                                                      delta_2d=delta_2d)
+
+    correlation_data = {"input": input_data, "output": {}}
+    correlation_data["output"].update(transformation_data)
+    correlation_data["output"].update({"poi": poi_image_coordinates})
+
+    return correlation_data
+
+
 def save_correlation_data(data: dict, path: str) -> None:
     correlation_data_filename = os.path.join(path, "correlation_data.yaml")
     with open(correlation_data_filename, "w") as file:

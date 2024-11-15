@@ -1,4 +1,3 @@
-import datetime
 import logging
 import os
 from typing import List
@@ -9,13 +8,9 @@ import pandas as pd
 from napari.utils import notifications
 from PyQt5 import QtWidgets
 
-from tdct import correlation
-from tdct.io import (
-    load_and_parse_fib_image,
-    parse_coordinates,
-    parse_correlation_result,
-    save_correlation_data,
-)
+from tdct.correlation_v2 import run_correlation
+from tdct.io import load_and_parse_fib_image, parse_coordinates
+from tdct.ui import tdct_main
 from tdct.ui.config import (
     COORDINATE_LAYER_PROPERTIES,
     CORRELATION_PROPERTIES,
@@ -29,7 +24,6 @@ from tdct.ui.config import (
     USER_PREFERENCES,
 )
 from tdct.ui.fm_import_dialog import FluorescenceImportDialog
-from tdct.ui.qt import tdct_main
 from tdct.util import multi_channel_get_z_guass
 
 logging.basicConfig(level=logging.INFO)
@@ -486,7 +480,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         nfm_poi = len(self.df[self.df["type"] == "POI"])
 
         self.tableWidget_fib_fid_coordinates.setRowCount(nfib)
-        self.tableWidget_fib_fid_coordinates.setColumnCount(3)
+        self.tableWidget_fib_fid_coordinates.setColumnCount(2)
 
         self.tableWidget_fm_fid_coordinates.setRowCount(nfm)
         self.tableWidget_fm_fid_coordinates.setColumnCount(3)
@@ -495,7 +489,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.tableWidget_fm_poi_coordinates.setColumnCount(3)
 
         # set column headers
-        self.tableWidget_fib_fid_coordinates.setHorizontalHeaderLabels(["X", "Y", "Z"])
+        self.tableWidget_fib_fid_coordinates.setHorizontalHeaderLabels(["X", "Y"])
         self.tableWidget_fm_fid_coordinates.setHorizontalHeaderLabels(["X", "Y", "Z"])
         self.tableWidget_fm_poi_coordinates.setHorizontalHeaderLabels(["X", "Y", "Z"])
 
@@ -515,9 +509,6 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             )
             self.tableWidget_fib_fid_coordinates.setItem(
                 i, 1, QtWidgets.QTableWidgetItem(y)
-            )
-            self.tableWidget_fib_fid_coordinates.setItem(
-                i, 2, QtWidgets.QTableWidgetItem(z)
             )
 
         for i, coord in enumerate(self.df[self.df["type"] == "FM"].values):
@@ -1051,69 +1042,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         return
 
 
-def run_correlation(
-    fib_coords: np.ndarray,
-    fm_coords: np.ndarray,
-    poi_coords: np.ndarray,
-    image_props: tuple,
-    rotation_center: tuple,
-    path: str,
-    fib_image_filename: str = "",
-    fm_image_filename: str = "",
-) -> dict:
-    """Run the correlation between the FIB and FM images"""
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    results_file = os.path.join(path, f"{timestamp}_correlation.txt")
-
-    # run the correlation # TODO: migrate to correlation.correlate
-    correlation_results = correlation.main(
-        markers_3d=fm_coords,
-        markers_2d=fib_coords,
-        spots_3d=poi_coords,
-        rotation_center=rotation_center,
-        results_file=results_file,
-        imageProps=image_props,
-    )
-
-    # input data
-    input_data = {
-        "fib_coordinates": fib_coords.tolist(),
-        "fm_coordinates": fm_coords.tolist(),
-        "poi_coordinates": poi_coords.tolist(),
-        "image_properties": {
-            "fib_image_filename": fib_image_filename,
-            "fib_image_shape": list(image_props[0]),
-            "fib_pixel_size_um": float(image_props[1]),
-            "fm_image_filename": fm_image_filename,
-            "fm_image_shape": list(image_props[2]),
-        },
-        "rotation_center": list(rotation_center),
-        "rotation_center_custom": list(rotation_center),
-    }
-
-    # output data
-    correlation_data = parse_correlation_result(
-        correlation_results, input_data=input_data
-    )
-
-    # full correlation data
-    full_correlation_data = {
-        "metadata": {
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-            "data_path": path,
-            "csv_path": os.path.join(path, "data.csv"),
-            "project_path": path, # TODO: add project path
-        },
-        "correlation": correlation_data,
-    }
-    save_correlation_data(full_correlation_data, path)
-
-    return correlation_data
-# TODO: replace this with correlation.correlate, and save results?
-
-
-# TODO:
 
 
 # link the facecolor / bordercolor to the dataframe
@@ -1124,7 +1053,6 @@ def run_correlation(
 
 # functionalise correlation code
 
-# add data tools: reslice (iterpolate), set pixel size, set origin, set rotation
 # think about how to embed in autolamella with targetting
 
 # display the transformation matrix
@@ -1149,6 +1077,7 @@ def run_correlation(
 # load images
 # show text on the points (point index)
 # add z-gauss fitting to the points in fm
+# add data tools: reslice (iterpolate), set pixel size, set origin, set rotation
 # when the correlation is run, show the results on the fib image
 # add a 'clear' button to clear all the points
 # show the corresponding points on the fm image
