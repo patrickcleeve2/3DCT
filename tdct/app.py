@@ -1,369 +1,38 @@
-import csv
 import datetime
 import logging
 import os
-from pprint import pprint
-from typing import Dict, List, Tuple
+from typing import List
 
 import napari
 import numpy as np
 import pandas as pd
-import tifffile as tff
-import yaml
 from napari.utils import notifications
-from ome_types import from_tiff
-from PIL import Image
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QDialog
 
 from tdct import correlation
+from tdct.io import (
+    load_and_parse_fib_image,
+    parse_coordinates,
+    parse_correlation_result,
+    save_correlation_data,
+)
+from tdct.ui.config import (
+    COORDINATE_LAYER_PROPERTIES,
+    CORRELATION_PROPERTIES,
+    DATAFRAME_PROPERTIES,
+    FILE_FILTERS,
+    INSTRUCTIONS,
+    LINE_LAYER_PROPERTIES,
+    REPROJECTION_LAYER_PROPERTIES,
+    RESULTS_LAYER_PROPERTIES,
+    TEXT_PROPERTIES,
+    USER_PREFERENCES,
+)
 from tdct.ui.fm_import_dialog import FluorescenceImportDialog
 from tdct.ui.qt import tdct_main
 from tdct.util import multi_channel_get_z_guass
 
 logging.basicConfig(level=logging.INFO)
-
-
-# PATH = "/home/patrick/development/data/CORRELATION/3dct/3D_correlation_test_dataset"
-PATH = "/home/patrick/github/3DCT/3D_correlation_test_dataset"
-
-
-def parse_coordinates(fib_coord_filename: str, fm_coord_filename: str) -> list:
-    """Parse the coordinates from the old style coordinate files"""
-
-    def parse_coordinate_file(filename: str, delimiter: str = "\t") -> list:
-        coords: list = []
-        with open(filename) as csv_file:
-            for row in csv.reader(csv_file, delimiter=delimiter):
-                coords.append([field for field in row])
-        return coords
-
-    fib_coordinates = parse_coordinate_file(fib_coord_filename)
-    fm_coordinates = parse_coordinate_file(fm_coord_filename)
-
-    fib_coordinates = np.array(fib_coordinates, dtype=np.float32)
-    fm_coordinates = np.array(fm_coordinates, dtype=np.float32)
-
-    return fib_coordinates, fm_coordinates
-
-
-# convert 2D image coordinates to microscope image coordinates
-def convert_poi_to_microscope_coordinates(
-    poi_coordinates: np.ndarray, fib_image_shape: tuple, pixel_size_um: float
-) -> list:
-    # image centre
-    cx = float(fib_image_shape[1] * 0.5)
-    cy = float(fib_image_shape[0] * 0.5)
-
-    poi_image_coordinates: list = []
-
-    for i in range(poi_coordinates.shape[1]):
-        px = poi_coordinates[:, i]  # (x, y, z) in pixel coordinates
-        px = [float(px[0]), float(px[1])]
-        px_x, px_y = (
-            px[0] - cx,
-            cy - px[1],
-        )  # point in microscope image coordinates (px)
-        pt_um = (
-            px_x * pixel_size_um,
-            px_y * pixel_size_um,
-        )  # point in microscope image coordinates (um)
-        poi_image_coordinates.append(
-            {"image_px": px, "px": [px_x, px_y], "px_um": [pt_um[0], pt_um[1]]}
-        )
-
-    return poi_image_coordinates
-
-
-def extract_transformation_data(transf, mod_translation, reproj_3d, delta_2d) -> dict:
-    # extract eulers in degrees
-    eulers = transf.extract_euler(r=transf.q, mode="x", ret="one")
-    eulers = eulers * 180 / np.pi
-
-    # RMS error
-    rms_error = transf.rmsError
-
-    # difference between points after transforming 3D points to 2D
-    delta_2d_mean_abs_err = np.absolute(delta_2d).mean(axis=1)
-
-    transformation_data = {
-        "transformation": {
-            "scale": float(transf.s_scalar),
-            "rotation_eulers": eulers.tolist(),
-            "rotation_quaternion": transf.q.tolist(),
-            "translation_around_rotation_center_custom": mod_translation.tolist(),
-            "translation_around_rotation_center_zero": transf.d.tolist(),
-        },
-        "error": {
-            "reprojected_3d": reproj_3d.tolist(),
-            "delta_2d": delta_2d.tolist(),
-            "mean_absolute_error": delta_2d_mean_abs_err.tolist(),
-            "rms_error": float(rms_error),
-        },
-    }
-
-    return transformation_data
-
-
-def parse_correlation_result(cor_ret: list, input_data: dict) -> dict:
-    # point of interest data
-    spots_2d = cor_ret[2]  # (points of interest in 2D image)
-    fib_image_shape = input_data["image_properties"]["fib_image_shape"]
-    pixel_size_um = input_data["image_properties"]["fib_pixel_size_um"]
-
-    poi_image_coordinates = convert_poi_to_microscope_coordinates(
-        spots_2d, fib_image_shape, pixel_size_um
-    )
-
-    # transformation data
-    transf = cor_ret[0]     # transformation matrix
-    reproj_3d = cor_ret[1]  # reprojected 3D points to 2D points
-    delta_2d = cor_ret[3]   # difference between reprojected 3D points and 2D points (in pixels)
-    mod_translation = cor_ret[5]  # translation around rotation center
-    transformation_data = extract_transformation_data(transf=transf, 
-                                                      mod_translation=mod_translation, 
-                                                      reproj_3d=reproj_3d, 
-                                                      delta_2d=delta_2d)
-
-    correlation_data = {"input": input_data, "output": {}}
-    correlation_data["output"].update(transformation_data)
-    correlation_data["output"].update({"poi": poi_image_coordinates})
-
-    return correlation_data
-
-
-def save_correlation_data(data: dict, path: str) -> None:
-    correlation_data_filename = os.path.join(path, "correlation_data.yaml")
-    with open(correlation_data_filename, "w") as file:
-        yaml.dump(data, file)
-
-    logging.info(f"Correlation data saved to: {correlation_data_filename}")
-
-
-def parse_metadata(filename: str) -> np.ndarray:
-    """parse metadata from a tfs tiff file"""
-    # TODO: replace this with real parser versions eventually
-    md = {}
-    with tff.TiffFile(filename) as tif:
-        for page in tif.pages:
-            for tag in page.tags.values():
-                if tag.name == "FEI_HELIOS" or tag.code == 34682: # TFS_MD tag
-                    md = tag.value
-    return md
-
-
-def load_image_and_metadata(filename: str) -> tuple[np.ndarray, dict]:
-    image = tff.imread(filename)
-    metadata = parse_metadata(filename)
-    return image, metadata
-
-
-def remove_metadata_bar(img: np.ndarray) -> np.ndarray:
-    """Loop through the image, and check if the row is all zeros indicating the start of the metadata bar"""
-
-    for i, row in enumerate(img):
-        if not np.any(row):
-            # trim the image when the first row with all zeros is found
-            break
-    return img[:i]
-
-
-def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
-    image, md = load_image_and_metadata(filename)
-    pixel_size = None
-    try:
-        pixel_size = md["Scan"]["PixelWidth"]
-    except KeyError as e:
-        logging.warning(f"Pixel size not found in metadata: {e}")
-        pass
-
-    # convert to grayscale
-    if image.ndim == 3:
-        image = np.asarray(Image.fromarray(image).convert("L"))
-
-    trim_metadata: bool = False
-    try:
-        shape = md["Image"]["ResolutionY"], md["Image"]["ResolutionX"]
-        if image.shape != shape:
-            logging.info(
-                f"Image shape {image.shape} does not match metadata shape {shape}, likely a metadata bar present"
-            )
-            trim_metadata = True
-    except KeyError as e:
-        logging.warning(f"Image shape not found in metadata: {e}")
-        pass
-
-    # trim the image to before the first row with all zeros
-    if trim_metadata:
-        try:
-            # crop the image to the metadata bar
-            cropped_img = image[: shape[0], : shape[1]]
-            # remove the metadata bar with image processing
-            trimmed_img = remove_metadata_bar(image)
-
-            logging.info(
-                f"Cropped Shape: {cropped_img.shape}, Trimmed Shape: {trimmed_img.shape}"
-            )
-            if cropped_img.shape != trimmed_img.shape:
-                raise ValueError(
-                    "Cropped image shape does not match trimmed image shape"
-                )
-
-            if image.shape != trimmed_img.shape:
-                logging.info(f"Image trimmed from {image.shape} to {trimmed_img.shape}")
-                image = trimmed_img
-        except Exception as e:
-            logging.error(f"Error trimming image: {e}")
-            pass
-
-    # from pprint import pprint
-    # pprint(md)
-
-    return image, pixel_size
-
-def _load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
-    image = tff.imread(path)
-
-    zstep, pixel_size, colours = None, None, []
-    try:
-        ome = from_tiff(path)
-        pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
-        zstep = ome.images[0].pixels.physical_size_z
-        colours = [channel.name for channel in ome.images[0].channels]
-    except Exception as e:
-        logging.debug(f"Failed to extract metadata: {e}")
-
-    return image, {"pixel_size": pixel_size, 
-                   "zstep": zstep, 
-                   "colours": colours}
-
-if not os.path.exists(PATH):
-    PATH = __file__
-
-# TODO: add preferences.yaml file to store the default settings
-# TODO: add more user preferences, e.g. colors, sizes, etc.
-USER_PREFERENCES = {
-    "default_path": PATH,
-    "show_corresponding_points": True,
-    "show_thick_dims": True,
-    "use_z_gauss_optim": True,
-    "use_mip": False,
-}
-
-FILE_FILTERS = (
-    "TIFF files (*.tif *.tiff);;"+
-    "OME-TIFF files (*.ome.tiff *.ome.tif);;"
-)
-        
-
-TEXT_PROPERTIES = {
-    "string": "idx",  # dataframe column
-    "size": 10,
-    "color": "white",
-    "anchor": "upper_right",
-}
-
-COORDINATE_LAYER_PROPERTIES = {
-    "text": TEXT_PROPERTIES,
-    "name": "Coordinates",
-    "ndim": 3,
-    "size": 20,
-    "projection_mode": "all",
-    "symbol": "ring",
-    "blending": "additive",
-    "opacity": 0.9,
-    "coordinates": {
-        "FIB": {"color": "lime", "translation": 0},
-        "FM": {"color": "cyan", "translation": None},
-        "POI": {"color": "magenta", "translation": None},
-    },
-}
-
-LINE_LAYER_PROPERTIES = {
-    "name": "Corresponding Points",
-    "shape_type": "line",
-    "edge_color": "white",
-    "edge_width": 2,
-}
-
-RESULTS_LAYER_PROPERTIES = {
-    "name": "Results",
-    "ndim": 2,
-    "size": 10,
-    "symbol": "disc",
-    "border_color": "magenta",
-    "face_color": "magenta",
-    "blending": "additive",
-    "opacity": 0.9,
-}
-
-ERROR_TEXT_PROPERTIES = {
-    "string": "abs_err",  # dataframe column
-    "size": 5,
-    "color": "red",
-    "anchor": "upper_right",
-}
-REPROJECTION_LAYER_PROPERTIES = {
-    "name": "Reprojected Data",
-    "ndim": 2,
-    "size": 5,
-    "symbol": "disc",
-    "face_color": "red",
-    "border_color": "red",
-    "opacity": 0.5,
-    "text": ERROR_TEXT_PROPERTIES,
-}
-
-DATAFRAME_PROPERTIES = {
-    "columns": ["x", "y", "z", "type", "color", "idx", "translation"]
-}
-
-CORRELATION_PROPERTIES = {"min_fiducial_points": 4, "min_poi_points": 1}
-
-INSTRUCTIONS = """
-To add points:
-\tShift + Click:\tAdd FIB/FM Point (4 required)
-\tCtrl + Click:\tAdd POI Point (1 required)
-
-To edit points:
-\tSelect the Coordinates Layer
-\tEnter Selection Mode (Press 'S')
-\tClick and Drag to move points
-\tPress 'Delete' to remove points
-\tPress 'Z' to enter Pan/Zoom Mode
-"""
-
-# add dynamic instructions for different steps
-
-INSTRUCTIONS2 = """
-
-\n3D Correlation Tool
-\n
-
-\nTo add points:
-\nShift + Click: Add FIB/FM Point
-\nCtrl + Click: Add POI Point
-
-To edit points:
-\nSelect the Coordinates Layer
-\nEnter Selection Mode (Press 'S')
-\nClick and Drag to select points
-\nPress 'Delete' to remove points
-
-\nWhile the Coordinates Layer is selected:
-\n Press 'S' to enter Selection Mode
-\n Press 'Z' to enter Pan/Zoom Mode
-
-To Run Correlation:
-\n1. Load FIB and FM Images
-\n2. Select Fiducial Coordinates (at least 4)
-\n3. Select Points of Interest (at least 1)
-\n4. Click 'Run Correlation'
-\n The results will be displayed on the FIB Image
-
-Data is automatically saved in the project directory.
-"""
-
 
 def set_table_properties(table):
     table.horizontalHeader().setSectionResizeMode(
@@ -1397,7 +1066,7 @@ def run_correlation(
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_file = os.path.join(path, f"{timestamp}_correlation.txt")
 
-    # run the correlation
+    # run the correlation # TODO: migrate to correlation.correlate
     correlation_results = correlation.main(
         markers_3d=fm_coords,
         markers_2d=fib_coords,

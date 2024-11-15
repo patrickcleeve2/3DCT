@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QApplication, QDialog
 
 from tdct.ui.qt import tdct_fm_import_dialog
 from tdct.util import INTERPOLATION_METHODS, multi_channel_interpolation
+from tdct.io import load_and_parse_fm_image
 
 
 class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
@@ -19,8 +20,7 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
 
         self.path = path
 
-        from tdct.app import _load_and_parse_fm_image
-        self.image, self.md = _load_and_parse_fm_image(path)       
+        self.image, self.md = load_and_parse_fm_image(path)       
 
         self.setWindowTitle("Import Fluorescence Image")
 
