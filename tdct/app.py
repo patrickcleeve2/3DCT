@@ -39,6 +39,8 @@ def set_table_properties(table):
     # set min height to 200
     table.setMinimumHeight(200)
 
+from tdct.ui.test_table import PandasTableModel
+
 
 class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
     def __init__(self, viewer: napari.Viewer):
@@ -856,10 +858,29 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         """"""
         self._toggle_thick_dims()
         self._draw_points_to_layer()
-        self._display_coordinates_in_table()
+        # self._display_coordinates_in_table()
+
+        self.setup_table_view()
+
         self._save_dataframe()
         self._show_corresponding_points()
         self._show_project_controls()
+
+    def setup_table_view(self):
+        self.model = PandasTableModel(self.df)
+        self.tableView_coordinates.setModel(self.model)
+
+        # set minimum height to stretch the table
+        self.tableView_coordinates.verticalHeader().setMinimumSectionSize(25)
+        # Connect signals
+        self.model.dataChanged.connect(self.on_data_changed)
+
+    def on_data_changed(self, df):
+        print(df)
+        self.df = df
+        self._dataframe_updated()
+
+        # TODO: split into separate table views
 
     def _show_corresponding_points(self):
         """Show the corresponding points between the two images."""
@@ -1051,8 +1072,6 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 # add 'open project' concept, load project file, load images, load coordinates
 # add an auto-save toggle
 
-# functionalise correlation code
-
 # think about how to embed in autolamella with targetting
 
 # display the transformation matrix
@@ -1087,6 +1106,8 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 # remove the metadata bar from fib image (and auto detect?)
 # editable pixelsize for fib image + warning when not set
 # editable rotation center
+
+# functionalise correlation code
 # add options to set the size / symbol / color of the points
 # show the error data on the image
 
