@@ -1,14 +1,14 @@
-from PyQt5.QtWidgets import (QApplication, QDialog)
-from PyQt5.QtCore import Qt
-import sys
-from tdct.ui.qt import tdct_fm_import_dialog
-
 import os
+import sys
 
-from tdct.util import multi_channel_interpolation
+import numpy as np
 from napari.qt.threading import thread_worker
 from PyQt5.QtCore import pyqtSignal
-import numpy as np
+from PyQt5.QtWidgets import QApplication, QDialog
+
+from tdct.ui.qt import tdct_fm_import_dialog
+from tdct.util import INTERPOLATION_METHODS, multi_channel_interpolation
+
 
 class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
     progress_update = pyqtSignal(dict)
@@ -32,7 +32,9 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         if zstep is not None:    
             self.doubleSpinBox_current_step_size.setValue(zstep * 1e9)
 
-        self.image_interp = None
+        self.fm_image: np.ndarray = None
+        self.image_interp: np.ndarray = None
+        self.accepted_image: bool = False
 
         self.setup_connections()
 
@@ -42,7 +44,12 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         self.label_description.setText(f"File: {os.path.basename(self.path)}")
 
         self.progress_update.connect(self.update_progress)
+        self.pushButton_load_image.clicked.connect(self.on_load_image)
+        self.pushButton_load_interpolated_image.clicked.connect(self.on_load_interpolated_image)
+        self.pushButton_load_interpolated_image.setVisible(False)
 
+        self.comboBox_interpolation_method.addItems(INTERPOLATION_METHODS)
+        self.comboBox_interpolation_method.setCurrentText("spline")
 
         # hide progress bar
         self.progressBar_interpolation.setVisible(False)
@@ -66,12 +73,13 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         image = self.image
         zstep =  self.doubleSpinBox_current_step_size.value()       # nm
         pixel_size = self.doubleSpinBox_target_step_size.value()   # nm
+        interpolation_method = self.comboBox_interpolation_method.currentText()
 
         self.worker = self._interpolate_worker(
             image=image,
             current_pixelsize=zstep,
             target_pixelsize=pixel_size,
-            method="spline"
+            method=interpolation_method,
         )
         self.worker.finished.connect(self._workflow_finished)
         self.worker.errored.connect(self._workflow_aborted)
@@ -80,6 +88,9 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
     def _workflow_finished(self):
         self.progressBar_interpolation.setVisible(False)
         self.worker = None
+
+        if self.image_interp is not None:
+            self.pushButton_load_interpolated_image.setVisible(True)
 
     def _workflow_aborted(self, exc):
         self.progressBar_interpolation.setVisible(False)
@@ -100,9 +111,20 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
 
         self.image_interp = image_interp
 
+    def on_load_image(self):
+        self.fm_image = self.image
+        self.accepted_image = True
+
+        self.close()
+
+    def on_load_interpolated_image(self):
+        self.fm_image = self.image_interp
+        self.accepted_image = True
+        self.close()
 
 # TODO: save interpolated image
 # TODO: disable interaction while interpolating
+# TODO: parse colour from image metadata``
 
 PATH = "/home/patrick/github/3DCT/3D_correlation_test_dataset/test-image.ome.tiff"
 

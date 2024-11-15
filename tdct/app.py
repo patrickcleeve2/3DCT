@@ -639,17 +639,13 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # load the fm image, set the data
         try:
-            # self.fm_image = tff.imread(filename)
 
-            dialog = FluorescenceImportDialog(path=filename)
-            result = dialog.exec_()
+            dialog = FluorescenceImportDialog(path=filename, parent=self)
+            _ = dialog.exec_()
             
-            if result == QDialog.Accepted:
-                print("OK clicked")
-                image = dialog.image_interp
-            else:
-                print("Cancel clicked")
-                image = dialog.image
+            if not dialog.accepted_image:
+                return 
+            image = dialog.fm_image
 
             if image is None:
                 raise ValueError("No image data found")
