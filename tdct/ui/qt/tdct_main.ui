@@ -24,7 +24,7 @@
        <property name="geometry">
         <rect>
          <x>0</x>
-         <y>-166</y>
+         <y>0</y>
          <width>747</width>
          <height>974</height>
         </rect>
@@ -321,7 +321,7 @@
            <item row="1" column="1">
             <widget class="QCheckBox" name="checkBox_show_points_thick_dims">
              <property name="text">
-              <string>Show Points in Thick Dimensions</string>
+              <string>Show Points in All Dimensions</string>
              </property>
             </widget>
            </item>

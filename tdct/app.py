@@ -471,73 +471,6 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.df = pd.read_csv(filename)
         self._dataframe_updated()
 
-    def _display_coordinates_in_table(self):
-        # clear the table
-        self.tableWidget_fib_fid_coordinates.clear()
-        self.tableWidget_fm_fid_coordinates.clear()
-
-        # set the number of rows
-        nfib = len(self.df[self.df["type"] == "FIB"])
-        nfm = len(self.df[self.df["type"] == "FM"])
-        nfm_poi = len(self.df[self.df["type"] == "POI"])
-
-        self.tableWidget_fib_fid_coordinates.setRowCount(nfib)
-        self.tableWidget_fib_fid_coordinates.setColumnCount(2)
-
-        self.tableWidget_fm_fid_coordinates.setRowCount(nfm)
-        self.tableWidget_fm_fid_coordinates.setColumnCount(3)
-
-        self.tableWidget_fm_poi_coordinates.setRowCount(nfm_poi)
-        self.tableWidget_fm_poi_coordinates.setColumnCount(3)
-
-        # set column headers
-        self.tableWidget_fib_fid_coordinates.setHorizontalHeaderLabels(["X", "Y"])
-        self.tableWidget_fm_fid_coordinates.setHorizontalHeaderLabels(["X", "Y", "Z"])
-        self.tableWidget_fm_poi_coordinates.setHorizontalHeaderLabels(["X", "Y", "Z"])
-
-        set_table_properties(self.tableWidget_fib_fid_coordinates)
-        set_table_properties(self.tableWidget_fm_fid_coordinates)
-        set_table_properties(self.tableWidget_fm_poi_coordinates)
-
-        def _format_data(data: list):
-            return [f"{i:.2f}" for i in data]
-
-        # add the coordinates to the table
-        for i, coord in enumerate(self.df[self.df["type"] == "FIB"].values):
-            x, y, z = _format_data(coord[:3])
-
-            self.tableWidget_fib_fid_coordinates.setItem(
-                i, 0, QtWidgets.QTableWidgetItem(x)
-            )
-            self.tableWidget_fib_fid_coordinates.setItem(
-                i, 1, QtWidgets.QTableWidgetItem(y)
-            )
-
-        for i, coord in enumerate(self.df[self.df["type"] == "FM"].values):
-            x, y, z = _format_data(coord[:3])
-
-            self.tableWidget_fm_fid_coordinates.setItem(
-                i, 0, QtWidgets.QTableWidgetItem(x)
-            )
-            self.tableWidget_fm_fid_coordinates.setItem(
-                i, 1, QtWidgets.QTableWidgetItem(y)
-            )
-            self.tableWidget_fm_fid_coordinates.setItem(
-                i, 2, QtWidgets.QTableWidgetItem(z)
-            )
-
-        for i, coord in enumerate(self.df[self.df["type"] == "POI"].values):
-            x, y, z = _format_data(coord[:3])
-
-            self.tableWidget_fm_poi_coordinates.setItem(
-                i, 0, QtWidgets.QTableWidgetItem(x)
-            )
-            self.tableWidget_fm_poi_coordinates.setItem(
-                i, 1, QtWidgets.QTableWidgetItem(y)
-            )
-            self.tableWidget_fm_poi_coordinates.setItem(
-                i, 2, QtWidgets.QTableWidgetItem(z)
-            )
 
     def run_correlation(self):
         """Run the correlation between FIB and FM coordiantes."""
@@ -692,7 +625,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         # set column headers
         self.tableWidget_results_error.setHorizontalHeaderLabels(["dx", "dy"])
 
-        set_table_properties(self.tableWidget_results_error)
+        set_table_properties(self.tableWidget_results_error) # TODO: change to pandas model
 
         # loop through all points and and print (x, y)
         for i, (dx, dy) in enumerate(delta_2d):
@@ -863,7 +796,6 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.df.reset_index(drop=True, inplace=True)
         self._toggle_thick_dims()
         self._draw_points_to_layer()
-        # self._display_coordinates_in_table()
 
         self.setup_table_view()
 
@@ -873,20 +805,17 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
     def setup_table_view(self):
 
-
         self.model = PandasTableModel(self.df, display_columns=["type", "idx", "x", "y", "z"])
-        self.tableView_coordinates.setModel(self.model)
+        self.tableView_coordinates.setModel(self.model) # TODO: this doesn't need to be re-initialized every time
 
         # set minimum height to stretch the table
         self.tableView_coordinates.verticalHeader().setMinimumSectionSize(25)
-        # Connect signals
+        # connect signals
         self.model.dataChanged.connect(self.on_data_changed)
 
     def on_data_changed(self, df):
-        print(df)
-        self.df = df.reset_index(drop=True)
         # reindex the dataframe
-        # self.df = self.df.reset_index(drop=True)
+        self.df = df.reset_index(drop=True)
         self._dataframe_updated()
 
         # TODO: split into separate table views
@@ -912,6 +841,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # TODO: show matching points based on idx, not order
         # show the user a warning if there are unmatched points, or points with the same idx
+        # TODO: use last_idx to see which points were changed?
 
         df_sorted = self.df.sort_values(by=["type", "idx"])
 
