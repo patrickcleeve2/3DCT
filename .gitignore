@@ -246,7 +246,7 @@ dist/
 build/
 # *.spec
 spec/
-__init__.py
+# __init__.py
 # test/
 .cache/
 
