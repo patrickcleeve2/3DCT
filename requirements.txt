@@ -8,6 +8,7 @@ colorama==0.4.6
 qimage2ndarray==1.10.0
 PyQt5==5.15.11
 napari>=0.5.1
+ome_types>=0.5.2
 
 # github dependencies
 # tools3dct @ git+https://github.com/hermankhfung/tools3dct.git#egg=tools3dct
