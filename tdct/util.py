@@ -443,23 +443,39 @@ def zyx_targeting(
     cutout: int = 15,
     apply_threshold: bool = False,
     threshold_val: float = 0.1,
-    repeats: int = 5,
+    iterations: int = 5,
 ):
-    print(f"Initial x: {x}, y: {y}")
+    """Automated ZYX targeting for a 3D image stack. Optimizes the selection of x,y,z coordinates
+    for a given 2D point in a 3D image stack using an iterative gaussian fitting approach.
+    Args:
+
+        img: 3D numpy array (Z,Y,X)
+        x: initial x coordinate
+        y: initial y coordinate
+        cutout: size of the cutout around the point
+        apply_threshold: apply thresholding to the image
+        threshold_val: threshold value for thresholding
+        iterations: number of iterations
+    Returns:
+        x, y, (zval, zidx, zsigma): optimized x, y, z coordinates and z-value (max, index, sigma)
+    """
+    logging.info(f"Starting zyx targeting for {img.shape}, Initial x: {x}, y: {y}")
+
     # get the initial z position (Note: this can fail, returns None)
     zval, zidx, zsigma = multi_channel_get_z_guass(image=img, x=x, y=y)
 
     assert img.ndim == 3, "Image must be 3D"
 
-    for repeat in range(repeats):
+    logging.info(f"Initial z: {zidx}, zval: {zval}, zsigma: {zsigma} for {x}, {y}")
 
+    for i in range(iterations):
         data = extract_image_patch(img, x, y, zidx, cutout)
         if data is None:
             break  # Or handle error case differently
 
-        if apply_threshold: # apply threshold on normalized data
+        if apply_threshold:  # apply threshold on normalized data
             data = threshold_image(data, threshold_val)
-        
+
         # fit a 2d guassian to the 3d cutout
         poptXY = fitgaussian(data)
         if poptXY is None:
@@ -468,32 +484,56 @@ def zyx_targeting(
         (height, xopt, yopt, width_x, width_y) = poptXY
 
         # x and y are switched when applying the offset
-        x = int(x-cutout+yopt)
-        y = int(y-cutout+xopt)
+        x = x - cutout + yopt
+        y = y - cutout + xopt
         width, height = img.shape[-1], img.shape[-2]
         if not (0 <= x < width and 0 <= y < height):
-            break    
+            break
 
         # fit a 1d guassian to the z stack
         zval, zidx, zsigma = get_z_gauss(img, x=x, y=y)
-        print(f"repeat: {repeat}, x: {x}, y: {y}, z: {zidx}, zval: {zval}, zsigma: {zsigma}")
+        logging.debug(
+            f"iteration: {i}, x: {x}, y: {y}, z: {zidx}, zval: {zval}, zsigma: {zsigma}"
+        )
+
+    # TODO: check that xyz are in image bounds, if not return original x, y, z
 
     return x, y, (zval, zidx, zsigma)
 
-def multi_channel_zyx_targeting(image: np.ndarray, xinit: int, yinit: int) -> Tuple[int, Tuple[int, int, int]]:
+def multi_channel_zyx_targeting(
+    image: np.ndarray,
+    xinit: int,
+    yinit: int,
+    apply_threshold: bool = False,
+    threshold_val: float = 0.1,
+    cutout: int = 15,
+    iterations: int = 5,
+) -> Tuple[int, Tuple[int, int, int]]:
     """ZYX targeting for multi-channel images
     Args:
         image: 4D numpy array (CZYX)
         xinit: initial x coordinate
         yinit: initial y coordinate
+        apply_threshold: apply thresholding to the image
+        threshold_val: threshold value for thresholding
+        cutout: size of the cutout around the point
+        iterations: number of iterations
     Returns:
         ch_idx: channel index with the best z-value
         x, y, z: x, y, z coordinates of the best z-value in the best channel
-    """    
+    """
 
     # shortcut for single channel images
     if image.ndim == 3:
-        x1, y1, (zv, z1, zs) = zyx_targeting(image, xinit, yinit)
+        x1, y1, (zv, z1, zs) = zyx_targeting(
+            image,
+            xinit,
+            yinit,
+            cutout=cutout,
+            apply_threshold=apply_threshold,
+            threshold_val=threshold_val,
+            iterations=iterations,
+        )
         return 0, (x1, y1, z1)
 
     if image.ndim != 4:
@@ -505,15 +545,23 @@ def multi_channel_zyx_targeting(image: np.ndarray, xinit: int, yinit: int) -> Tu
     for i in range(image.shape[0]):
         ch_image = image[i]
         try:
-            x1, y1, (zv, z1, zs) = zyx_targeting(ch_image, xinit, yinit)
+            x1, y1, (zv, z1, zs) = zyx_targeting(
+                ch_image,
+                xinit,
+                yinit,
+                cutout=cutout,
+                apply_threshold=apply_threshold,
+                threshold_val=threshold_val,
+                iterations=iterations,
+            )
         except Exception as e:
-            print(f"An error occured: {e}")
+            logging.error(f"an error occured during channel {i}: {e}")
             x1, y1, zv, z1, zs = xinit, yinit, 0, None, None
         zvalues.append((zv, z1, zs))
         xyz_vals.append((x1, y1, z1))
 
     vals = np.array(zvalues).astype(np.float32)
     ch_idx = np.argmax(vals[:, 0])
-    print(f"Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
 
+    logging.info(f"solution found: Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
     return ch_idx, xyz_vals[ch_idx]

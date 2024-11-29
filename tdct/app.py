@@ -24,7 +24,7 @@ from tdct.ui.config import (
     USER_PREFERENCES,
 )
 from tdct.ui.fm_import_dialog import FluorescenceImportDialog
-from tdct.util import multi_channel_get_z_guass
+from tdct.util import multi_channel_get_z_guass, multi_channel_zyx_targeting
 from tdct.ui.pandas_table import PandasTableModel
 logging.basicConfig(level=logging.INFO)
 
@@ -738,11 +738,25 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.use_z_gauss_optim = self.checkBox_use_zgauss_opt.isChecked()
         if layer in ["FM", "POI"] and self.use_z_gauss_optim and not from_file:
             prev_z = z
+            prev_x, prev_y = x, y
 
             try:
                 # getzGauss can fail, so we need to catch the exception
-                zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
-                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
+                # zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
+                # logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
+                logging.info(f"Using multi-channel zyx-targeting")
+                ch, (x,y,z) = multi_channel_zyx_targeting(self.fm_image, x, y)
+                if z is None:
+                    raise RuntimeError("Z-Gauss optimisation failed: optimisation failed")
+                # TODO: also check if the point is within the image bounds
+                if z < 0 or z > self.fm_image.shape[1]:
+                    raise RuntimeError("Z-Gauss optimisation failed: z out of range")
+                if y < 0 or y > self.fm_image.shape[2]:
+                    raise RuntimeError("Z-Gauss optimisation failed: y out of range")
+                if x < 0 or x > self.fm_image.shape[3]:
+                    raise RuntimeError("Z-Gauss optimisation failed: x out of range")
+
+
             except RuntimeError as e:
                 logging.error(f"Error in z-gauss optimisation: {e}")
                 # show a warning to the user
@@ -750,6 +764,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                     f"Error in Z-Gauss optimisation, using previous z value: {prev_z}"
                 )
                 z = prev_z
+                x, y = prev_x, prev_y
 
         self.df = pd.concat(
             [
