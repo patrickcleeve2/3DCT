@@ -1,12 +1,12 @@
 import logging
-import time
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate, ndimage
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, leastsq
 
+# migrated from tdct.beadPos and refactored
 
 ### GAUSSIAN FITTING ###
 def get_z_gauss(image: np.ndarray, x: int, y: int, show: bool = False) -> Tuple[float, int, float]:
@@ -67,7 +67,6 @@ def fit_guass1d(data: np.ndarray, show: bool = False) -> Tuple[np.ndarray, np.nd
 
     return popt, pcov
 
-
 def gauss1d(x: np.ndarray, A: float, mu: float, sigma: float) -> float:
     """Gaussian 1D fit
     Args:
@@ -80,12 +79,98 @@ def gauss1d(x: np.ndarray, A: float, mu: float, sigma: float) -> float:
     """
     return A * np.exp(-((x - mu) ** 2) / (2.0 * sigma**2))
 
+##### 2D GAUSSIAN FIT #####
+
+## Gaussian 2D fit from http://scipy.github.io/old-wiki/pages/Cookbook/FittingData
+def gaussian(height, center_x, center_y, width_x, width_y):
+    """Returns a Gaussian function with the given parameters"""
+    width_x = float(width_x)
+    width_y = float(width_y)
+    return lambda x,y: height*np.exp(
+                -(((center_x-x)/width_x)**2+((center_y-y)/width_y)**2)/2)
+
+def moments(data):
+    """Returns (height, x, y, width_x, width_y)
+    the Gaussian parameters of a 2D distribution by calculating its
+    moments"""
+    total = data.sum()
+    X, Y = np.indices(data.shape)
+    x = (X*data).sum()/total
+    y = (Y*data).sum()/total
+    col = data[:, int(y)]
+    width_x = np.sqrt(abs((np.arange(col.size)-y)**2*col).sum()/col.sum())
+    row = data[int(x), :]
+    width_y = np.sqrt(abs((np.arange(row.size)-x)**2*row).sum()/row.sum())
+    height = data.max()
+    return height, x, y, width_x, width_y
+
+def fitgaussian(data: np.ndarray) -> Tuple[float, float, float, float, float]:
+    """Returns (height, x, y, width_x, width_y)
+    the Gaussian parameters of a 2D distribution found by a fit"""
+
+    def errorfunction(p):
+        return np.ravel(gaussian(*p)(*np.indices(data.shape)) - data)
+
+    try:
+        params = moments(data)
+    except ValueError:
+        return None
+    p, success = leastsq(errorfunction, params)
+    if np.isnan(p).any():
+        return None
+
+    return p
+
+def extract_image_patch(img: np.ndarray, x: int, y:int, z: int, cutout: int) -> np.ndarray:
+    # Get image dimensions
+    z_max, height, width = img.shape
+    
+    # Calculate patch bounds
+    x_min = int(x - cutout)
+    x_max = int(x + cutout)
+    y_min = int(y - cutout)
+    y_max = int(y + cutout)
+    z = int(round(z))
+
+    # Check if patch is within bounds
+    is_valid = (
+        x_min >= cutout and
+        x_max < width and
+        y_min >= cutout and
+        y_max < height and
+        0 <= z < z_max
+    )
+
+    if not is_valid:
+        print("Point(s) too close to edge or out of bounds.")
+        return None
+
+    # Extract and return the patch
+    return np.copy(img[z, y_min:y_max, x_min:x_max])
+
+def threshold_image(data: np.ndarray, threshold_val: float):
+    """
+    Zero out values below a threshold relative to the data range.
+    
+    Args:
+        data: numpy array of image data
+        threshold_percent: float between 0-1, normalized threshold value
+    """
+    data_min = data.min()
+    data_max = data.max()
+    data_range = data_max - data_min
+    
+    # Calculate threshold value
+    threshold_value = data_max - (data_range * threshold_val)
+    
+    # Zero out values below threshold 
+    data[data < threshold_value] = 0
+    
+    return data
 
 #### INTERPOLATION ####
 
-
 INTERPOLATION_METHODS = ["linear", "spline", "fast-cubic"]
-
 
 def interpolate_z_stack(
     image: np.ndarray, pixelsize_in: float, pixelsize_out: float, method: str = "linear"
@@ -350,3 +435,85 @@ def multi_channel_get_z_guass(image: np.ndarray, x: int, y: int, show: bool = Fa
     ch_idx = np.argmax(vals[:, 0])
 
     return vals[ch_idx] # zval, zidx, zsigma
+
+def zyx_targeting(
+    img: np.ndarray,
+    x: int,
+    y: int,
+    cutout: int = 15,
+    apply_threshold: bool = False,
+    threshold_val: float = 0.1,
+    repeats: int = 5,
+):
+    print(f"Initial x: {x}, y: {y}")
+    # get the initial z position (Note: this can fail, returns None)
+    zval, zidx, zsigma = multi_channel_get_z_guass(image=img, x=x, y=y)
+
+    assert img.ndim == 3, "Image must be 3D"
+
+    for repeat in range(repeats):
+
+        data = extract_image_patch(img, x, y, zidx, cutout)
+        if data is None:
+            break  # Or handle error case differently
+
+        if apply_threshold: # apply threshold on normalized data
+            data = threshold_image(data, threshold_val)
+        
+        # fit a 2d guassian to the 3d cutout
+        poptXY = fitgaussian(data)
+        if poptXY is None:
+            break
+
+        (height, xopt, yopt, width_x, width_y) = poptXY
+
+        # x and y are switched when applying the offset
+        x = int(x-cutout+yopt)
+        y = int(y-cutout+xopt)
+        width, height = img.shape[-1], img.shape[-2]
+        if not (0 <= x < width and 0 <= y < height):
+            break    
+
+        # fit a 1d guassian to the z stack
+        zval, zidx, zsigma = get_z_gauss(img, x=x, y=y)
+        print(f"repeat: {repeat}, x: {x}, y: {y}, z: {zidx}, zval: {zval}, zsigma: {zsigma}")
+
+    return x, y, (zval, zidx, zsigma)
+
+def multi_channel_zyx_targeting(image: np.ndarray, xinit: int, yinit: int) -> Tuple[int, Tuple[int, int, int]]:
+    """ZYX targeting for multi-channel images
+    Args:
+        image: 4D numpy array (CZYX)
+        xinit: initial x coordinate
+        yinit: initial y coordinate
+    Returns:
+        ch_idx: channel index with the best z-value
+        x, y, z: x, y, z coordinates of the best z-value in the best channel
+    """    
+
+    # shortcut for single channel images
+    if image.ndim == 3:
+        x1, y1, (zv, z1, zs) = zyx_targeting(image, xinit, yinit)
+        return 0, (x1, y1, z1)
+
+    if image.ndim != 4:
+        raise ValueError(f"image must be a 4D array (CZYX), got {image.ndim}")
+
+    zvalues = []
+    xyz_vals = []
+
+    for i in range(image.shape[0]):
+        ch_image = image[i]
+        try:
+            x1, y1, (zv, z1, zs) = zyx_targeting(ch_image, xinit, yinit)
+        except Exception as e:
+            print(f"An error occured: {e}")
+            x1, y1, zv, z1, zs = xinit, yinit, 0, None, None
+        zvalues.append((zv, z1, zs))
+        xyz_vals.append((x1, y1, z1))
+
+    vals = np.array(zvalues).astype(np.float32)
+    ch_idx = np.argmax(vals[:, 0])
+    print(f"Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
+
+    return ch_idx, xyz_vals[ch_idx]
