@@ -146,7 +146,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.actionClear_Coordinates.triggered.connect(self.clear_coordinates)
 
         # project / image controls
-        self.toolButton_project_path.clicked.connect(self._set_project_path)
+        self.toolButton_project_path.clicked.connect(self.set_project_path)
         self.toolButton_fib_image_path.clicked.connect(self._set_fib_image_path)
         self.toolButton_fm_image_path.clicked.connect(self._set_fm_image_path)
 
@@ -212,14 +212,23 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         results_enabled = results_enabled and self.results_layer is not None
         self._show_results_widgets(results_enabled)
 
-    def _set_project_path(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            caption="Select Project Directory",
-            directory=USER_PREFERENCES["default_path"],
-        )
-        if not path:
-            return
+    def clear_project(self):
+        # clear all the project data
+        self.path = None
+        self.project_loaded = False
+        self.fib_image = None
+        self.fm_image = None
+        # TODO: more to clear?
+
+    def set_project_path(self, path: str = None):
+        if path is None:
+            path = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                caption="Select Project Directory",
+                directory=USER_PREFERENCES["default_path"],
+            )
+            if not path:
+                return
 
         self.path = path
         self.lineEdit_project_path.setText(self.path)
@@ -256,10 +265,19 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         # load the fib image, set the data, and set the translation
         try:
-            self.fib_image, self.fib_pixel_size = load_and_parse_fib_image(filename)
+            fib_image, fib_pixel_size = load_and_parse_fib_image(filename)
         except Exception as e:
             logging.error(f"Error loading FIB Image: {e}")
             return
+
+        self.load_fib_image(fib_image, fib_pixel_size), filename
+
+    def load_fib_image(self, image: np.ndarray, pixel_size: float = None, filename: str = None):
+        self.fib_image = image
+        self.fib_pixel_size = pixel_size
+
+        if filename is not None:
+            self.lineEdit_fib_image_path.setText(filename)
 
         if self.fib_pixel_size is not None:
             self.doubleSpinBox_parameters_pixel_size.setValue(self.fib_pixel_size * 1e6)
@@ -269,11 +287,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                 "Pixel size not found in metadata, please set manually"
             )
 
-        # self.fib_image_layer.data = self.fib_image
         self.fib_image_layer = self._add_image_layer(
             image=self.fib_image, layer=self.fib_image_layer, name="FIB Image"
         )
-        self.lineEdit_fib_image_path.setText(filename)
 
         # update the translation of the FM and POI points
         self.translation = self.fib_image.shape[1]
