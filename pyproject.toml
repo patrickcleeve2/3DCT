@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tdct"
+version = "4.0.0"
+description = "3d correlation toolbox"
+authors = [
+    {name = "Patrick Cleeve", email = "patrick@openfibsem.org"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPLv3"}
+classifiers = [
+    "Programming Language :: Python :: 3.8",
+    "License :: OSI Approved :: GPLv3",
+    "Operating System :: OS Independent",
+    "Framework :: napari",
+]
+
+dependencies = [
+"ome_types>=0.5.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/patrickcleeve2/3DCT"
+"Bug Tracker" = "https://github.com/patrickcleeve2/3DCT"
+
+[project.optional-dependencies]
+standalone = [
+"numpy>=1.23.5,<=2.0.0",
+"scipy==1.13.1",
+"matplotlib>=3.9.1",
+"opencv-python-headless==4.10.0.84",
+"scikit-image==0.24.0",
+"tifffile==2024.7.24",
+"colorama==0.4.6",
+"qimage2ndarray==1.10.0",
+"PyQt5==5.15.11",
+"napari>=0.5.1",
+
+]
+
+
+[project.scripts]
+3dct_ui = "TDCT_main:main"
+3dct_correlation = "TDCT_correlation:main"
+napari_3dct = "tdct.app:main"
+
+[tool.setuptools]
+packages = ["tdct"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml"]

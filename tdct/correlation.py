@@ -122,10 +122,10 @@ The procedure is organized as follows:
 import os
 import numpy as np
 
-import pyto
-import pyto.common as common
-import pyto.util
-from pyto.rigid_3d import Rigid3D
+import tdct.pyto
+import tdct.pyto.common as common
+import tdct.pyto.util
+from tdct.pyto.rigid_3d import Rigid3D
 
 ########## Functions #############################################################
 ##################################################################################

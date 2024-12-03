@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-from pyto.rigid_3d import Rigid3D
+from tdct.pyto.rigid_3d import Rigid3D
 from tdct.io import parse_correlation_result_v2, save_correlation_data
 
 DEFAULT_OPTIMIZATION_PARAMETERS = {

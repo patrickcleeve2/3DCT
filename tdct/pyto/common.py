@@ -21,8 +21,8 @@ import logging
 
 import numpy
 
-import pyto
-import pyto.attributes as attributes
+import tdct.pyto
+import tdct.pyto.attributes as attributes
 
 
 #################################################
