@@ -146,7 +146,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.actionClear_Coordinates.triggered.connect(self.clear_coordinates)
 
         # project / image controls
-        self.toolButton_project_path.clicked.connect(self.set_project_path)
+        self.toolButton_project_path.clicked.connect(lambda: self.set_project_path(path=None))
         self.toolButton_fib_image_path.clicked.connect(self._set_fib_image_path)
         self.toolButton_fm_image_path.clicked.connect(self._set_fm_image_path)
 
