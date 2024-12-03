@@ -742,10 +742,13 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
             try:
                 # getzGauss can fail, so we need to catch the exception
-                # zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
-                # logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
-                logging.info(f"Using multi-channel zyx-targeting")
-                ch, (x,y,z) = multi_channel_zyx_targeting(self.fm_image, x, y)
+                zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
+                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
+                
+                # TODO: enable after more thorough testing
+                # logging.info(f"Using multi-channel zyx-targeting")
+                # ch, (x,y,z) = multi_channel_zyx_targeting(self.fm_image, x, y)
+                
                 if z is None:
                     raise RuntimeError("Z-Gauss optimisation failed: optimisation failed")
                 # TODO: also check if the point is within the image bounds
@@ -766,26 +769,16 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                 z = prev_z
                 x, y = prev_x, prev_y
 
-        self.df = pd.concat(
-            [
-                self.df,
-                pd.DataFrame(
-                    [
-                        {
-                            "x": x,
-                            "y": y,
-                            "z": z,
-                            "type": layer,
-                            "color": color,
-                            "idx": n,
-                            "translation": translation,
-                        }
-                    ]
-                ),
-            ],
-            axis=0,
-            ignore_index=True,
-        )
+        # add the point to the dataframe
+        df_tmp = pd.DataFrame([{"x": x,"y": y, "z": z, 
+                                "type": layer,"color": color, 
+                                "idx": n, "translation": translation,}
+                                ])
+
+        if self.df.empty:
+            self.df = df_tmp
+        else:
+            self.df = pd.concat([self.df, df_tmp], axis=0, ignore_index=True)
 
         self._dataframe_updated()
 
