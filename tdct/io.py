@@ -29,7 +29,6 @@ def parse_coordinates(fib_coord_filename: str, fm_coord_filename: str) -> list:
 
     return fib_coordinates, fm_coordinates
 
-
 def parse_metadata(filename: str) -> np.ndarray:
     """parse metadata from a tfs tiff file"""
     # TODO: replace this with real parser versions eventually
@@ -41,25 +40,29 @@ def parse_metadata(filename: str) -> np.ndarray:
                     md = tag.value
     return md
 
-
 def load_image_and_metadata(filename: str) -> tuple[np.ndarray, dict]:
+    # TODO: convert to FIBSEMImage always, require the package...
+    try:
+        from fibsem.structures import FibsemImage
+        image = FibsemImage.load(filename)
+        pixel_size = image.metadata.pixel_size.x
+        image = image.data
+    except Exception as e:
+        logging.debug(f"Failed to load as FibsemImage: {e}")
+
+        try:
+            image, pixel_size = load_tfs_image(filename)
+        except Exception as e:
+            logging.error(f"Failed to load as TFS image: {e}")
+            return None, None
+
+    return image, pixel_size
+
+def load_tfs_image(filename: str) -> Tuple[np.ndarray, float]:
+    """Load a TFS image and extract the pixel size from the metadata"""
     image = tff.imread(filename)
-    metadata = parse_metadata(filename)
-    return image, metadata
+    md = parse_metadata(filename)
 
-
-def remove_metadata_bar(img: np.ndarray) -> np.ndarray:
-    """Loop through the image, and check if the row is all zeros indicating the start of the metadata bar"""
-
-    for i, row in enumerate(img):
-        if not np.any(row):
-            # trim the image when the first row with all zeros is found
-            break
-    return img[:i]
-
-
-def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
-    image, md = load_image_and_metadata(filename)
     pixel_size = None
     try:
         pixel_size = md["Scan"]["PixelWidth"]
@@ -106,6 +109,21 @@ def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
             logging.error(f"Error trimming image: {e}")
             pass
 
+    return image, pixel_size
+
+def remove_metadata_bar(img: np.ndarray) -> np.ndarray:
+    """Loop through the image, and check if the row is all zeros indicating the start of the metadata bar"""
+
+    for i, row in enumerate(img):
+        if not np.any(row):
+            # trim the image when the first row with all zeros is found
+            break
+    return img[:i]
+
+
+def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
+    image, pixel_size = load_image_and_metadata(filename)
+    
     # from pprint import pprint
     # pprint(md)
 

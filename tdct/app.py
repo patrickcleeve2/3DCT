@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from napari.utils import notifications
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import pyqtSignal
 
 from tdct.correlation_v2 import run_correlation
 from tdct.io import load_and_parse_fib_image, parse_coordinates
@@ -43,6 +44,8 @@ def set_table_properties(table):
 
 
 class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
+    close_signal = pyqtSignal()
+
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
         self.setupUi(self)
@@ -87,6 +90,10 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
 
         self.setup_connections()
         self._show_project_controls()
+
+    def closeEvent(self, event):
+        self.close_signal.emit()
+        super().closeEvent(event)
 
     def _show_results_widgets(self, enable: bool):
         self.groupBox_results.setVisible(enable)
