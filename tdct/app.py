@@ -339,7 +339,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                 raise ValueError("No image data found")
             
             self.fm_image = image
-            self.fm_md = dialog.m         
+            self.fm_md = dialog.md
 
         except Exception as e:
             logging.error(f"Error loading FM Image: {e}")
