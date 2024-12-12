@@ -21,6 +21,7 @@ classifiers = [
 
 dependencies = [
 "ome_types>=0.5.2",
+"imagecodecs>=2024.9.22",
 ]
 
 [project.urls]
