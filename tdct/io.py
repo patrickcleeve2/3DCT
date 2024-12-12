@@ -7,6 +7,7 @@ import numpy as np
 import tifffile as tff
 import yaml
 from ome_types import from_tiff
+from ome_types.model.simple_types import UnitsLength
 from PIL import Image
 
 ############# PARSER FUNCTIONS #############
@@ -129,18 +130,53 @@ def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
 
     return image, pixel_size
 
+def rgb_to_color_name(rgb):
+    colors = {
+        (255, 0, 0): "red",
+        (0, 255, 0): "green",
+        (0, 0, 255): "blue",
+        (255, 255, 0): "yellow",
+        (255, 0, 255): "magenta",
+        (0, 255, 255): "cyan",
+        (255, 255, 255): "gray",
+        (0, 0, 0): "black"
+    }
+
+    # Find the color with the minimum Euclidean distance
+    closest_color = min(colors.keys(), key=lambda color: sum((a-b)**2 for a, b in zip(rgb, color)))
+
+    return colors[closest_color]
+
 
 def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     image = tff.imread(path)
 
-    zstep, pixel_size, colours = None, None, []
+    zstep, pixel_size, colours = None, None, None
     try:
         ome = from_tiff(path)
         pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
         zstep = ome.images[0].pixels.physical_size_z
-        colours = [channel.name for channel in ome.images[0].channels]
+
+        # convert to SI (if required)
+        pixel_size_unit = ome.images[0].pixels.physical_size_x_unit
+        zstep_unit = ome.images[0].pixels.physical_size_z_unit
+        _unit_map = {
+            UnitsLength.NANOMETER: 1e-9,
+            UnitsLength.MICROMETER: 1e-6,
+            UnitsLength.MILLIMETER: 1e-3,
+            UnitsLength.METER: 1,
+        }
+        pixel_size *= _unit_map[pixel_size_unit]
+        zstep *= _unit_map[zstep_unit]
+
+        colours = [channel.color.as_rgb_tuple() for channel in ome.images[0].pixels.channels]
     except Exception as e:
         logging.debug(f"Failed to extract metadata: {e}")
+
+    if colours is None:
+        colours = [(255, 255, 255) for _ in range(image.shape[0])]
+
+    colours = [rgb_to_color_name(colour) for colour in colours]
 
     return image, {"pixel_size": pixel_size, 
                    "zstep": zstep, 

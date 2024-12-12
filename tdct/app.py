@@ -244,7 +244,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         # show the image controls
         self._show_project_controls()
 
-    def _add_image_layer(self, image: np.ndarray, layer, name: str):
+    def _add_image_layer(self, image: np.ndarray, layer, name: str, color=None):
         """Add an image layer to the viewer, and attach a callback to update the correlation points"""
         # TODO: fix the note below
         # NOTE: we can't just update the data, because I can't figure out how to update the dtype on a napari layer properly.
@@ -253,7 +253,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             self.viewer.layers.remove(layer)
             layer = None
         layer = self.viewer.add_image(
-            image, name=name, blending="additive"
+            image, name=name, blending="additive", colormap=color
         )  # TODO: migrate to properties
         # add callback to update the correlation points
         layer.mouse_drag_callbacks.append(self.update_correlation_points)
@@ -277,7 +277,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             logging.error(f"Error loading FIB Image: {e}")
             return
 
-        self.load_fib_image(fib_image, fib_pixel_size), filename
+        self.load_fib_image(image=fib_image, pixel_size=fib_pixel_size, filename=filename)
 
     def load_fib_image(self, image: np.ndarray, pixel_size: float = None, filename: str = None):
         self.fib_image = image
@@ -338,7 +338,8 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
             if image is None:
                 raise ValueError("No image data found")
             
-            self.fm_image = image                
+            self.fm_image = image
+            self.fm_md = dialog.m         
 
         except Exception as e:
             logging.error(f"Error loading FM Image: {e}")
@@ -366,8 +367,13 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                 self.viewer.layers.remove(layer)
 
         # add each channel as a separate layer
+        colors = self.fm_md.get("colours", None)
         for i, channel in enumerate(self.fm_image):
-            layer = self._add_image_layer(channel, None, f"FM Image Channel {i+1}")
+            if colors is not None:
+                color = colors[i]
+            else:
+                color = None
+            layer = self._add_image_layer(channel, None, f"FM Image Channel {i+1}", color=color)
             self.fm_image_layers.append(layer)
 
         self.lineEdit_fm_image_path.setText(filename)
