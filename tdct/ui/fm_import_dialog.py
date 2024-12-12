@@ -46,7 +46,7 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         self.pushButton_load_interpolated_image.setVisible(False)
 
         self.comboBox_interpolation_method.addItems(INTERPOLATION_METHODS)
-        self.comboBox_interpolation_method.setCurrentText("spline")
+        self.comboBox_interpolation_method.setCurrentText(INTERPOLATION_METHODS[0])
 
         # hide progress bar
         self.progressBar_interpolation.setVisible(False)
