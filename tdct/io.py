@@ -173,6 +173,10 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     except Exception as e:
         logging.debug(f"Failed to extract metadata: {e}")
 
+    # convert to 4D if necessary
+    if image.ndim == 3:
+        image = np.expand_dims(image, axis=0) # TODO: make sure we reshape colour too
+
     if colours is None:
         colours = [(255, 255, 255) for _ in range(image.shape[0])]
 
@@ -181,7 +185,6 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     return image, {"pixel_size": pixel_size, 
                    "zstep": zstep, 
                    "colours": colours}
-
 
 ##### CORRELATION RESULTS #####
 
