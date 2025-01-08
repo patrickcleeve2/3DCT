@@ -300,7 +300,13 @@ def multi_channel_get_z_guass(image: np.ndarray, x: int, y: int, show: bool = Fa
 
     z_values = []
     for channel in image:
-        z_values.append(get_z_gauss(channel, x, y, show=show))
+        try:
+            # optimisation can fail, fallback to nothing
+            zvals = get_z_gauss(channel, x, y, show=show)
+        except Exception as e:
+            logging.warning(f"Error in channel: {e}")
+            zvals = [0, 0, 0]
+        z_values.append(zvals)
 
     # get the channel with the maximum z-value (zval, zidx, zsigma)
     vals = np.array(z_values)

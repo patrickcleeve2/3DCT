@@ -1,10 +1,12 @@
+import contextlib
 import datetime
 import os
+from typing import List, Optional, Tuple, Dict
 
 import numpy as np
 
-from tdct.pyto.rigid_3d import Rigid3D
 from tdct.io import parse_correlation_result_v2, save_correlation_data
+from tdct.pyto.rigid_3d import Rigid3D
 
 DEFAULT_OPTIMIZATION_PARAMETERS = {
     'random_rotations': True,
@@ -17,12 +19,12 @@ DEFAULT_OPTIMIZATION_PARAMETERS = {
 }
 
 def correlate(
-    markers_3d: np.ndarray[float],
-    markers_2d: np.ndarray[float],
-    poi_3d: np.ndarray[float],
-    rotation_center: list[float],
+    markers_3d: np.ndarray,
+    markers_2d: np.ndarray,
+    poi_3d: np.ndarray,
+    rotation_center: List[float],
     imageProps: list = None,
-    optimiser_params: dict = DEFAULT_OPTIMIZATION_PARAMETERS
+    optimiser_params: Dict = DEFAULT_OPTIMIZATION_PARAMETERS
 ) -> dict:
     """
     Iteratively calculate the correlation between 3D and 2D markers and reproject the points of interest (POI) into the 2D image
@@ -88,10 +90,12 @@ def correlate(
         einit = rotation_init
 
     # establish correlation
-    transf = Rigid3D.find_32(
-        x=mark_3d, y=mark_2d, scale=scale,
-        randome=random_rotations, einit=einit, einit_dist=restrict_rotations,
-        randoms=random_scale, sinit=scale_init, ninit=ninit)
+    # Suppress stdout and stderr
+    with open(os.devnull, 'w') as fnull, contextlib.redirect_stdout(fnull), contextlib.redirect_stderr(fnull):
+        transf = Rigid3D.find_32(
+            x=mark_3d, y=mark_2d, scale=scale,
+            randome=random_rotations, einit=einit, einit_dist=restrict_rotations,
+            randoms=random_scale, sinit=scale_init, ninit=ninit)
 
     if imageProps:
         
@@ -100,11 +104,12 @@ def correlate(
         offset = (max(shape_3d) - np.array(shape_3d)) * 0.5
 
         mark_3d_cube = np.copy(mark_3d) + offset[::-1, np.newaxis]
-
-        transf_cube = Rigid3D.find_32(
-            x=mark_3d_cube, y=mark_2d, scale=scale,
-            randome=random_rotations, einit=einit, einit_dist=restrict_rotations,
-            randoms=random_scale, sinit=scale_init, ninit=ninit)
+        # Suppress stdout and stderr
+        with open(os.devnull, 'w') as fnull, contextlib.redirect_stdout(fnull), contextlib.redirect_stderr(fnull):
+            transf_cube = Rigid3D.find_32(
+                x=mark_3d_cube, y=mark_2d, scale=scale,
+                randome=random_rotations, einit=einit, einit_dist=restrict_rotations,
+                randoms=random_scale, sinit=scale_init, ninit=ninit)
     else:
         transf_cube = transf
 
@@ -170,7 +175,7 @@ def run_correlation(
     poi_coords: np.ndarray,
     image_props: tuple,
     rotation_center: tuple,
-    path: str,
+    path: Optional[str] = None,
     fib_image_filename: str = "",
     fm_image_filename: str = "",
 ) -> dict:
@@ -216,6 +221,7 @@ def run_correlation(
         },
         "correlation": correlation_data,
     }
-    save_correlation_data(full_correlation_data, path)
+    if path is not None:
+        save_correlation_data(full_correlation_data, path)
 
     return correlation_data
