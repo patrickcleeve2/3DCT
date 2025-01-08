@@ -215,6 +215,31 @@ def convert_poi_to_microscope_coordinates(
 
     return poi_image_coordinates
 
+def _convert_poi_to_microscope_image_coordinate(
+    poi_coordinates: Tuple[float, float], 
+    fib_image_shape: Tuple[int, int], 
+    pixel_size_um: float
+) -> Dict[str, List[float]]:
+    """Convert a single point of interest to microscope image coordinates. 
+    Point of Interest (POI) is in 2D image coordinates (x, y) in image pixels.
+    Microscope Image Coordinates are centred at the image centre (0, 0) and in micrometers.
+    Args:
+        poi_coordinates (Tuple[float, float]): Point of Interest (POI) in 2D image coordinates (x, y) in image pixels.
+        fib_image_shape (Tuple[int, int]): Shape of the FIBSEM image (height, width).
+        pixel_size_um (float): Pixel size in micrometers.
+    Returns:
+        Dict[str, List[float]]: Dictionary containing the POI in different coordinate systems."""
+    
+    # image centre
+    cx = float(fib_image_shape[1] * 0.5)
+    cy = float(fib_image_shape[0] * 0.5)
+
+    px = [float(poi_coordinates[0]), float(poi_coordinates[1])] # (x, y) in pixel coordinates
+    px_x, px_y = (px[0] - cx, cy - px[1])  # point in microscope image coordinates (px)
+    pt_um = (px_x * pixel_size_um,px_y * pixel_size_um)  # point in microscope image coordinates (um)
+    poi_image_coordinates = {"image_px": px, "px": [px_x, px_y], "px_um": [pt_um[0], pt_um[1]]}
+
+    return poi_image_coordinates
 
 def extract_transformation_data(transf, mod_translation, reproj_3d, delta_2d) -> dict:
     # extract eulers in degrees
