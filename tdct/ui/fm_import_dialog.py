@@ -18,7 +18,8 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
     progress_update = pyqtSignal(dict)
 
     def __init__(self, path: str, parent=None):
-        super().__init__()
+        super().__init__(parent=parent)
+        self.setStyleSheet(parent.styleSheet())
         self.setupUi(self)
         self.parent = parent
 
