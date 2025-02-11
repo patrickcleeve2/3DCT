@@ -1,9 +1,8 @@
 import logging
 from typing import List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy import interpolate, ndimage
+from scipy import ndimage
 from scipy.optimize import curve_fit, leastsq
 
 # migrated from tdct.beadPos and refactored
@@ -59,6 +58,7 @@ def fit_guass1d(data: np.ndarray, show: bool = False) -> Tuple[np.ndarray, np.nd
 
     # plot the data and the fit
     if show:
+        import matplotlib.pyplot as plt
         plt.title("1D Gaussian fit")
         plt.plot(data, label="Data")
         plt.plot(gauss1d(x, *popt), label="Gaussian 1D fit")

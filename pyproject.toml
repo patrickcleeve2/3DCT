@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 dependencies = [
-"ome_types>=0.5.2",
-"imagecodecs>=2024.9.22",
+    "numpy>=1.23.5,<=2.0.0",
+    "scipy==1.13.1",
 ]
 
 [project.urls]
@@ -40,7 +40,10 @@ standalone = [
 "qimage2ndarray==1.10.0",
 "PyQt5==5.15.11",
 "napari>=0.5.1",
-
+]
+io = [
+"ome_types>=0.5.2",
+"imagecodecs>=2024.9.22",
 ]
 
 
