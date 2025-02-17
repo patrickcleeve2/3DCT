@@ -61,6 +61,8 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         if zstep is not None:
             self.doubleSpinBox_current_step_size.setValue(zstep * 1e9)
 
+        self.label_error_text.setVisible(False)
+
     def update_progress(self, ddict: dict):
         val = ddict["value"]
         max = ddict["max"]
@@ -71,8 +73,6 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
         self.progressBar_interpolation.setFormat(
             f"Interpolating Channel: {val+1}/{max}"
         )
-
-        print(f"Progress: {prog}%")
 
     def on_interpolate(self):
         self.progressBar_interpolation.setVisible(True)

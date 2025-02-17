@@ -41,9 +41,7 @@ def set_table_properties(table):
     table.setMinimumHeight(200)
 
 
-
-
-class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
+class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
 
     def __init__(self, viewer: napari.Viewer):
@@ -72,16 +70,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.correlation_results: dict = None
 
         # add a point layer for the coordinates (FIB, FM, POI)
-        self.coordinates_layer = self.viewer.add_points(
-            [],
-            name=COORDINATE_LAYER_PROPERTIES["name"],
-            ndim=COORDINATE_LAYER_PROPERTIES["ndim"],
-            size=COORDINATE_LAYER_PROPERTIES["size"],
-            projection_mode=COORDINATE_LAYER_PROPERTIES["projection_mode"],
-            symbol=COORDINATE_LAYER_PROPERTIES["symbol"],
-            text=TEXT_PROPERTIES,
-            properties=self.df,
-        )
+        self.coordinates_layer = None
         # add a line layer for the corresponding points
 
         self.line_layer = None  # corresponding points
@@ -157,16 +146,99 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self.toolButton_fib_image_path.clicked.connect(self._set_fib_image_path)
         self.toolButton_fm_image_path.clicked.connect(self._set_fm_image_path)
 
-        # single click callbacks
-        self.coordinates_layer.mouse_drag_callbacks.append(
-            self.update_correlation_points
-        )
-        self.coordinates_layer.events.data.connect(self.coordinates_updated_from_ui)
-
         # correlation controls
         self.pushButton_run_correlation.clicked.connect(self.run_correlation)
         self.pushButton_run_correlation.setStyleSheet("background-color: green")
         self.label_instructions.setText(INSTRUCTIONS)
+
+        self.pushButton_continue.setVisible(False) # TODO: this should close the window, return results to main
+        self.pushButton_continue.clicked.connect(self.continue_pressed)
+
+        # method change
+        self.comboBox_method.addItems(["Multi-Point", "FIB-View"])
+        self.comboBox_method.currentIndexChanged.connect(self.on_method_changed)
+        self.on_method_changed()
+
+        # self.pushButton_add_poi()
+        self.pushButton_toggle_correlation_mode.clicked.connect(self.toggle_correlation_mode)
+
+    def on_method_changed(self):
+
+        self.method_name = self.comboBox_method.currentText()
+        logging.info(f"Method changed to: {self.method_name}")
+
+        self.is_multi_point = self.method_name == "Multi-Point"
+        self.is_fib_view = self.method_name == "FIB-View"
+
+        # display relevant panels
+        self.groupBox_controls.setVisible(self.is_fib_view)
+        self.groupBox_options.setVisible(self.is_fib_view)
+        self.groupBox_coordinates.setVisible(not self.is_fib_view)
+        self.groupBox_parameters.setVisible(not self.is_fib_view)
+    
+        if self.is_fib_view and self.fm_image_layers:
+            self.viewer.layers.link_layers(self.fm_image_layers)
+        if self.is_multi_point and self.fm_image_layers:
+            self.viewer.layers.unlink_layers(self.fm_image_layers)
+
+        # add poi
+        # continue?
+        # generate fib-view
+
+        if self.is_multi_point:
+            self._show_project_controls()
+            if self.coordinates_layer is None:
+                self.coordinates_layer = self.viewer.add_points(
+                [],
+                name=COORDINATE_LAYER_PROPERTIES["name"],
+                ndim=COORDINATE_LAYER_PROPERTIES["ndim"],
+                size=COORDINATE_LAYER_PROPERTIES["size"],
+                projection_mode=COORDINATE_LAYER_PROPERTIES["projection_mode"],
+                symbol=COORDINATE_LAYER_PROPERTIES["symbol"],
+                text=TEXT_PROPERTIES,
+                properties=self.df,
+            )
+            # single click callbacks
+            self.coordinates_layer.mouse_drag_callbacks.append(
+                self.update_correlation_points
+            )
+            self.coordinates_layer.events.data.connect(self.coordinates_updated_from_ui)
+            self.pushButton_run_correlation.setStyleSheet("background-color: green")
+
+        if self.is_fib_view:
+            if self.coordinates_layer is not None:
+                if self.coordinates_layer in self.viewer.layers:
+                    self.viewer.layers.remove(self.coordinates_layer)
+                self.coordinates_layer = None
+            self.clear_coordinates()
+
+            self.pushButton_continue.setVisible(True)
+            self.label_instructions.setVisible(False)
+            self.toggle_correlation_mode()
+            self.pushButton_run_correlation.setStyleSheet("background-color: gray")
+
+            # TODO: add callback for adding a point of interest
+
+    def toggle_correlation_mode(self):
+
+        if not self.is_fib_view:
+            return
+        
+        fm_layer = self.fm_image_layers[0]
+
+        enabled = bool(fm_layer.mode == "transform")
+
+        # select first fm layer
+        if enabled:
+            fm_layer.mode = "pan_zoom"
+        else:
+            fm_layer.mode = "transform"
+
+        self.viewer.layers.selection.active = fm_layer
+
+    def continue_pressed(self) -> None:
+        # continue with the correlation
+        logging.info("Continue Pressed")
 
     def _show_project_controls(self):
         self.images_loaded = self.fib_image is not None and self.fm_image is not None
@@ -314,7 +386,6 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         self._show_project_controls()
 
     def _set_fm_image_path(self):
-        
 
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -384,6 +455,7 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
                 layer.translate = [0, 0, self.translation]
 
         self._show_project_controls()  # TODO: change this to a callback on the data layer?
+        self.viewer.reset_view()
 
     def _update_parameters(self):
         """Update the parameters for the correlation"""
@@ -437,12 +509,18 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         """Toggle the MIP of the fm image"""
         self.use_mip = not self.use_mip
 
+        if self.is_fib_view:
+            self.viewer.layers.unlink_layers(self.fm_image_layers)
+
         # toggle mip
         for i, layer in enumerate(self.fm_image_layers):
             if self.use_mip:
                 layer.data = np.amax(self.fm_image[i], axis=0) # TODO: faster/better way to do this?
             else:
                 layer.data = self.fm_image[i]
+
+        if self.is_fib_view:
+            self.viewer.layers.link_layers(self.fm_image_layers)
 
     def load_coordinates(self):
         fib_coord_filename, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -669,6 +747,9 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
     def update_correlation_points(self, layer, event):
         # event.position  # (z, y, x)
 
+        if self.is_fib_view:
+            return # don't update points in FIB view
+
         if "Control" not in event.modifiers and "Shift" not in event.modifiers:
             return
 
@@ -824,8 +905,12 @@ class CorrelationUI(QtWidgets.QMainWindow, tdct_main.Ui_MainWindow):
         if self.results_layer is not None:
             self.viewer.layers.remove(self.results_layer)
             self.results_layer = None
+        if self.reprojection_layer is not None:
+            self.viewer.layers.remove(self.reprojection_layer)
+            self.reprojection_layer = None
 
-        self._dataframe_updated()
+        if self.coordinates_layer is not None:
+            self._dataframe_updated()
 
     def _dataframe_updated(self):
         """"""
