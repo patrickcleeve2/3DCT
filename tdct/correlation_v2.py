@@ -251,7 +251,10 @@ def convert_poi_to_microscope_coordinates(
             px_y * pixel_size_um,
         )  # point in microscope image coordinates (um)
         poi_image_coordinates.append(
-            {"image_px": px, "px": [px_x, px_y], "px_um": [pt_um[0], pt_um[1]]}
+            {"image_px": px, 
+             "px": [px_x, px_y], 
+             "px_um": [pt_um[0], pt_um[1]],                 # micrometers
+             "px_m": [pt_um[0] * 1e-6, pt_um[1] * 1e-6]}    # meters
         )
 
     return poi_image_coordinates

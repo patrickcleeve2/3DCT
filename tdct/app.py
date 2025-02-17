@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+from typing import List, Tuple
 
 import napari
 import numpy as np
@@ -40,6 +40,49 @@ def set_table_properties(table):
     # set min height to 200
     table.setMinimumHeight(200)
 
+def check_coordinates_inside_layer(event, target_layers: list):
+    for target_layer in target_layers:
+
+        def check_coords(event_position, target_layer):
+            coords = target_layer.world_to_data(event_position)
+
+            extent_min = target_layer.extent.data[0]  # (z, y, x)
+            extent_max = target_layer.extent.data[1]
+
+            # if they are 4d, remove the first dimension
+            if len(coords) == 4:
+                logging.warning(f"4D coordinates detected: {coords}, removing first dimension")
+                coords = coords[1:]
+                extent_min = extent_min[1:]
+                extent_max = extent_max[1:]
+
+            # convert the above logs into a json msg
+            msgd = {
+                "target_layer": target_layer.name,
+                "event_position": event_position,
+                "coords": coords,
+                "extent_min": extent_min,
+                "extent_max": extent_max,
+            }
+            logging.info(msgd)
+
+            for i, coord in enumerate(coords):
+                if coord < extent_min[i] or coord > extent_max[i]:
+                    logging.debug(
+                        f"Coordinate {coord} is out of bounds ({extent_min[i]}, {extent_max[i]})"
+                    )
+                    return False
+
+            return True
+
+        if check_coords(event.position, target_layer):
+            logging.debug(
+                f"Coordinates are within bounds of {target_layer.name}"
+            )
+            return target_layer
+
+    return None
+
 
 class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
@@ -68,11 +111,10 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self.df = pd.DataFrame([], columns=DATAFRAME_PROPERTIES["columns"])
         self.correlation_results: dict = None
+        self.poi_coordinate: Tuple[float, float] = (0, 0)
 
         # add a point layer for the coordinates (FIB, FM, POI)
         self.coordinates_layer = None
-        # add a line layer for the corresponding points
-
         self.line_layer = None  # corresponding points
         self.results_layer = None  # points of interest results
         self.reprojection_layer = None  # correlation error data
@@ -181,9 +223,16 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         if self.is_multi_point and self.fm_image_layers:
             self.viewer.layers.unlink_layers(self.fm_image_layers)
 
-        # add poi
         # continue?
         # generate fib-view
+
+        # remove callbacks
+        try:
+            self.fib_image_layer.mouse_drag_callbacks.remove(self.update_poi_coordinate)
+            for fm_layer in self.fm_image_layers:
+                fm_layer.mouse_drag_callbacks.remove(self.update_poi_coordinate)
+        except Exception as e:
+            pass
 
         if self.is_multi_point:
             self._show_project_controls()
@@ -214,10 +263,24 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
             self.pushButton_continue.setVisible(True)
             self.label_instructions.setVisible(False)
-            self.toggle_correlation_mode()
             self.pushButton_run_correlation.setStyleSheet("background-color: gray")
 
-            # TODO: add callback for adding a point of interest
+            self.poi_coordinate_layer = self.viewer.add_points(
+                [],
+                name="POI",
+                ndim=2,
+                size=20,
+                symbol="disc",
+                face_color="magenta",
+                blending="additive",
+                opacity=0.9,
+            )
+
+            self.fib_image_layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
+            for fm_layer in self.fm_image_layers:
+                fm_layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
+
+            self.toggle_correlation_mode()
 
     def toggle_correlation_mode(self):
 
@@ -254,6 +317,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.checkBox_show_corresponding_points.setEnabled(self.images_loaded)
         self.checkBox_show_points_thick_dims.setEnabled(self.images_loaded)
         self.checkBox_use_zgauss_opt.setEnabled(self.images_loaded)
+        self.comboBox_method.setEnabled(self.images_loaded)
 
         self.groupBox_options.setVisible(self.images_loaded)
         self.groupBox_parameters.setVisible(self.images_loaded)
@@ -636,6 +700,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             fm_image_filename=os.path.basename(self.lineEdit_fm_image_path.text()),
         )
 
+        # set the poi coordinate from the results
+        self.poi_coordinate = self.correlation_results["output"]["poi"][0]["px_m"]
+
         self._show_correlation_results(self.correlation_results)
 
     def _show_correlation_results(self, correlation_results: dict):
@@ -744,6 +811,46 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self._draw_error_data(reproj_3d)
 
+    def update_poi_coordinate(self, layer, event):
+
+        if not self.is_fib_view:
+            return
+        
+        if "Control" not in event.modifiers:
+            return
+
+        if self.fib_image is None or self.fm_image is None:
+            logging.info("No images loaded")
+            return
+
+        target_layer = check_coordinates_inside_layer(event, [self.fib_image_layer])
+
+        if target_layer is None:
+            logging.info("Coordinates are not within bounds of any layer")
+            return
+
+        position = target_layer.world_to_data(event.position)
+        logging.info(f"Target Layer: {target_layer.name}, Position: {position}")
+
+        # clear poi layer
+        self.poi_coordinate_layer.data = []
+        self.poi_coordinate_layer.data = [position]
+        
+        # convert to microscope coordinates
+        shape = self.fib_image.shape
+        pixelsize = self.fib_pixel_size
+        if pixelsize is None:
+            logging.error("FIB Pixel size not set")
+            pixelsize = 3.25e-8
+        cy, cx = np.asarray(shape) // 2
+
+        # distance from centre?
+        dy = float(-(position[0] - cy)) * pixelsize  # neg = down
+        dx = float(position[1] - cx)  * pixelsize # neg = left
+
+        self.poi_coordinate = (dx, dy)
+        logging.info(f"POI Coordinate: {self.poi_coordinate}, pixelsize: {pixelsize}")
+
     def update_correlation_points(self, layer, event):
         # event.position  # (z, y, x)
 
@@ -758,49 +865,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             return
 
         target_layers = [layer for layer in self.fm_image_layers] + [self.fib_image_layer]
-
-        def check_coordinates_inside_layer(event, target_layers: list):
-            for target_layer in target_layers:
-
-                def check_coords(event_position, target_layer):
-                    coords = target_layer.world_to_data(event_position)
-
-                    extent_min = target_layer.extent.data[0]  # (z, y, x)
-                    extent_max = target_layer.extent.data[1]
-
-                    # if they are 4d, remove the first dimension
-                    if len(coords) == 4:
-                        logging.warning(f"4D coordinates detected: {coords}, removing first dimension")
-                        coords = coords[1:]
-                        extent_min = extent_min[1:]
-                        extent_max = extent_max[1:]
-
-                    # convert the above logs into a json msg
-                    msgd = {
-                        "target_layer": target_layer.name,
-                        "event_position": event_position,
-                        "coords": coords,
-                        "extent_min": extent_min,
-                        "extent_max": extent_max,
-                    }
-                    logging.info(msgd)
-
-                    for i, coord in enumerate(coords):
-                        if coord < extent_min[i] or coord > extent_max[i]:
-                            logging.debug(
-                                f"Coordinate {coord} is out of bounds ({extent_min[i]}, {extent_max[i]})"
-                            )
-                            return False
-
-                    return True
-
-                if check_coords(event.position, target_layer):
-                    logging.debug(
-                        f"Coordinates are within bounds of {target_layer.name}"
-                    )
-                    return target_layer
-
-            return None
 
         target_layer = check_coordinates_inside_layer(event, target_layers)
 
