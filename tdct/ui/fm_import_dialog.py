@@ -130,6 +130,7 @@ class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
 
     def on_load_interpolated_image(self):
         self.fm_image = self.image_interp
+        self.md["zstep"] = self.doubleSpinBox_target_step_size.value() * 1e-9
         self.accepted_image = True
         self.close()
 

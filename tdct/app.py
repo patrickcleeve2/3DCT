@@ -26,6 +26,7 @@ from tdct.ui.config import (
 )
 from tdct.ui.fm_import_dialog import FluorescenceImportDialog
 from tdct.util import multi_channel_get_z_guass, multi_channel_zyx_targeting
+from tdct.generate import generate_fib_view
 from tdct.ui.pandas_table import PandasTableModel
 logging.basicConfig(level=logging.INFO)
 
@@ -84,6 +85,11 @@ def check_coordinates_inside_layer(event, target_layers: list):
     return None
 
 
+DEV_MODE = True
+DEV_PATH = "/home/patrick/github/3DCT/3D_correlation_test_dataset"
+DEV_FIB_IMAGE = "fib_002.tif"
+DEV_FM_IMAGE = "test-image2.ome.tiff"
+
 class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
 
@@ -118,9 +124,15 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.line_layer = None  # corresponding points
         self.results_layer = None  # points of interest results
         self.reprojection_layer = None  # correlation error data
+        self.poi_coordinate_layer = None  # points of interest for fib-view
 
         self.setup_connections()
         self._show_project_controls()
+
+        if DEV_MODE:
+            self.set_project_path(DEV_PATH)
+            self._set_fib_image_path(os.path.join(DEV_PATH, DEV_FIB_IMAGE))
+            self._set_fm_image_path(os.path.join(DEV_PATH, DEV_FM_IMAGE))
 
     def closeEvent(self, event):
         self.close_signal.emit()
@@ -185,8 +197,8 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # project / image controls
         self.toolButton_project_path.clicked.connect(lambda: self.set_project_path(path=None))
-        self.toolButton_fib_image_path.clicked.connect(self._set_fib_image_path)
-        self.toolButton_fm_image_path.clicked.connect(self._set_fm_image_path)
+        self.toolButton_fib_image_path.clicked.connect(lambda: self._set_fib_image_path(filename=None))
+        self.toolButton_fm_image_path.clicked.connect(lambda: self._set_fm_image_path(filename=None))
 
         # correlation controls
         self.pushButton_run_correlation.clicked.connect(self.run_correlation)
@@ -203,6 +215,56 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # self.pushButton_add_poi()
         self.pushButton_toggle_correlation_mode.clicked.connect(self.toggle_correlation_mode)
+        self.pushButton_generate_fib_view.clicked.connect(self._generate_fib_view)
+
+    def _generate_fib_view(self):
+        logging.info("Generate FIB View")
+
+        milling_angle = self.doubleSpinBox_milling_angle.value()
+
+        arrs = generate_fib_view(image=self.fm_image, 
+                                 md=self.fm_md, 
+                                 milling_angle=milling_angle, 
+                                 viewer=None)
+
+        # self.viewer.layers.unlink_layers(self.fm_image_layers)
+
+        # clear all fm image layers
+        for layer in self.fm_image_layers:
+            if layer in self.viewer.layers:
+                self.viewer.layers.remove(layer)
+
+        # # add each channel as a separate layer
+        # colors = self.fm_md.get("colours", None)
+        # for i, channel in enumerate(arrs):
+        #     if colors is not None:
+        #         color = colors[i]
+        #     else:
+        #         color = None
+        #     layer = self.viewer.add_image(
+        #     channel, 
+        #     name=f"FM Image Channel {i+1}", 
+        #     blending="additive", 
+        #     colormap=color
+        #     )
+        #     self.fm_image_layers.append(layer)
+
+        # self.viewer.layers.link_layers(self.fm_image_layers)
+        
+
+        # TODO: add a way to restore back to the original views?
+        fib_view_layers = []
+        for i, arr in enumerate(arrs):
+            layer = self.viewer.add_image(arr, 
+                     name=f"Channel {i}", 
+                     scale=(1, 1), 
+                     blending="additive", 
+                     colormap=self.fm_md["colours"][i])
+            
+            layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
+            fib_view_layers.append(layer)
+
+        self.viewer.layers.link_layers(fib_view_layers)
 
     def on_method_changed(self):
 
@@ -265,16 +327,19 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             self.label_instructions.setVisible(False)
             self.pushButton_run_correlation.setStyleSheet("background-color: gray")
 
-            self.poi_coordinate_layer = self.viewer.add_points(
-                [],
-                name="POI",
-                ndim=2,
-                size=20,
-                symbol="disc",
-                face_color="magenta",
-                blending="additive",
-                opacity=0.9,
-            )
+            if self.poi_coordinate_layer is None:
+                self.poi_coordinate_layer = self.viewer.add_points(
+                    [],
+                    name="POI",
+                    ndim=2,
+                    size=20,
+                    symbol="disc",
+                    face_color="magenta",
+                    blending="additive",
+                    opacity=0.9,
+                )
+            elif self.poi_coordinate_layer in self.viewer.layers:
+                self.poi_coordinate_layer.data = []
 
             self.fib_image_layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
             for fm_layer in self.fm_image_layers:
@@ -396,13 +461,14 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         return layer
 
-    def _set_fib_image_path(self):
-        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            caption="Open FIB Image",
-            directory=self.path,
-            filter=FILE_FILTERS,
-        )
+    def _set_fib_image_path(self, filename: str = None):
+        if filename is None:
+            filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                caption="Open FIB Image",
+                directory=self.path,
+                filter=FILE_FILTERS,
+            )
         if not filename:
             return
 
@@ -449,14 +515,14 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                 layer.translate = [0, 0, self.translation]
         self._show_project_controls()
 
-    def _set_fm_image_path(self):
-
-        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            caption="Open FM Image",
-            directory=self.path,
-            filter=FILE_FILTERS,
-        )
+    def _set_fm_image_path(self, filename: str = None):
+        if filename is None:
+            filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                caption="Open FM Image",
+                directory=self.path,
+                filter=FILE_FILTERS,
+            )
         if not filename:
             return
 
@@ -475,6 +541,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             
             self.fm_image = image
             self.fm_md = dialog.md
+            # fm_md: {"pixel_size": float, "zstep": float, "colours": List[str]}
 
         except Exception as e:
             logging.error(f"Error loading FM Image: {e}")
