@@ -188,6 +188,13 @@
       </property>
      </widget>
     </item>
+    <item row="4" column="0" colspan="2">
+     <widget class="QPushButton" name="pushButton_confirm_view">
+      <property name="text">
+       <string>Confirm View</string>
+      </property>
+     </widget>
+    </item>
    </layout>
   </widget>
   <widget class="QWizardPage" name="wizardPage_export">

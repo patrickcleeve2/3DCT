@@ -26,7 +26,7 @@
          <x>0</x>
          <y>0</y>
          <width>747</width>
-         <height>1166</height>
+         <height>1282</height>
         </rect>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
@@ -384,47 +384,27 @@
            <string>Controls</string>
           </property>
           <layout class="QGridLayout" name="gridLayout_3">
-           <item row="2" column="1">
-            <widget class="QDoubleSpinBox" name="doubleSpinBox_milling_angle">
-             <property name="decimals">
-              <number>1</number>
-             </property>
-             <property name="minimum">
-              <double>-360.000000000000000</double>
-             </property>
-             <property name="maximum">
-              <double>360.000000000000000</double>
-             </property>
-             <property name="value">
-              <double>18.000000000000000</double>
-             </property>
-            </widget>
-           </item>
            <item row="0" column="0" colspan="2">
-            <widget class="QLabel" name="label_fib_view_information">
+            <widget class="QLabel" name="label_drag_drop_information">
              <property name="text">
-              <string>TextLabel</string>
+              <string>Correlation mode will enable drag and drop, and scaling controls. Reset will restore the initial position and scale of the images.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
-           <item row="1" column="0" colspan="2">
+           <item row="1" column="0">
             <widget class="QPushButton" name="pushButton_toggle_correlation_mode">
              <property name="text">
               <string>Enable Correlation Mode</string>
              </property>
             </widget>
            </item>
-           <item row="2" column="0">
-            <widget class="QLabel" name="label_milling_angle">
+           <item row="1" column="1">
+            <widget class="QPushButton" name="pushButton_reset_transform">
              <property name="text">
-              <string>TextLabel</string>
-             </property>
-            </widget>
-           </item>
-           <item row="3" column="0" colspan="2">
-            <widget class="QPushButton" name="pushButton_generate_fib_view">
-             <property name="text">
-              <string>Generate FIB View</string>
+              <string>Reset Transform</string>
              </property>
             </widget>
            </item>

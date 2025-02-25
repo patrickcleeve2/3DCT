@@ -153,7 +153,7 @@ def correlate(
 
 def save_results(correlation_results: dict, results_file: str):
     """
-    Save the results of the correlation to a file
+    Save the results of the correlation to a file (old .txt format)
     """
     from tdct.correlation import write_results
     # write transformation params and correlation
@@ -204,6 +204,7 @@ def run_correlation(
         },
         "rotation_center": list(rotation_center),
         "rotation_center_custom": list(rotation_center),
+        "method": "mulit-point",
     }
 
     # output data

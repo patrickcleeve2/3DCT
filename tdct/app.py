@@ -1,21 +1,24 @@
 import logging
 import os
+import datetime
 from typing import List, Tuple
 
 import napari
 import numpy as np
 import pandas as pd
+from napari.layers import Image as NapariImageLayer
 from napari.utils import notifications
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal
 
-from tdct.correlation_v2 import run_correlation
+from tdct.correlation_v2 import run_correlation, save_correlation_data
 from tdct.io import load_and_parse_fib_image, parse_coordinates
 from tdct.ui import tdct_main
 from tdct.ui.config import (
     COORDINATE_LAYER_PROPERTIES,
     CORRELATION_PROPERTIES,
     DATAFRAME_PROPERTIES,
+    DRAG_DROP_INSTRUCTIONS,
     FILE_FILTERS,
     INSTRUCTIONS,
     LINE_LAYER_PROPERTIES,
@@ -24,10 +27,10 @@ from tdct.ui.config import (
     TEXT_PROPERTIES,
     USER_PREFERENCES,
 )
-from tdct.ui.fm_import_dialog import FluorescenceImportDialog
-from tdct.util import multi_channel_get_z_guass, multi_channel_zyx_targeting
-from tdct.generate import generate_fib_view
+from tdct.ui.fm_import_wizard import open_import_wizard
 from tdct.ui.pandas_table import PandasTableModel
+from tdct.util import multi_channel_get_z_guass, multi_channel_zyx_targeting
+
 logging.basicConfig(level=logging.INFO)
 
 def set_table_properties(table):
@@ -85,10 +88,15 @@ def check_coordinates_inside_layer(event, target_layers: list):
     return None
 
 
-DEV_MODE = True
+DEV_MODE = False
 DEV_PATH = "/home/patrick/github/3DCT/3D_correlation_test_dataset"
 DEV_FIB_IMAGE = "fib_002.tif"
 DEV_FM_IMAGE = "test-image2.ome.tiff"
+
+# TODO:
+# support 2D multi-point correlation: works when image is 2D (z=1), but should also support restricting
+# display overlay after correlation
+# add deconvolution 
 
 class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
@@ -111,7 +119,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self.translation = None
         self.fib_image_layer = None
-        self.fm_image_layers: List = []
+        self.fm_image_layers: List[NapariImageLayer] = []
         self.selected_index = []
 
         self.rotation_center: tuple = None
@@ -217,74 +225,66 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # self.pushButton_add_poi()
         self.pushButton_toggle_correlation_mode.clicked.connect(self.toggle_correlation_mode)
-        self.pushButton_generate_fib_view.clicked.connect(self._generate_fib_view)
+        self.pushButton_reset_transform.clicked.connect(self.reset_transforms)
 
-    def _generate_fib_view(self):
-        logging.info("Generate FIB View")
+        self.doubleSpinBox_parameters_pixel_size.setSuffix(" um")
 
-        milling_angle = self.doubleSpinBox_milling_angle.value()
+    # def _generate_fib_view(self):
+    #     logging.info("Generate FIB View")
 
-        arrs = generate_fib_view(image=self.fm_image,
-                                 pixelsize=self.fm_md["pixel_size"],
-                                 zstep=self.fm_md["zstep"],
-                                 milling_angle=milling_angle,
-                                 colours=self.fm_md["colours"],
-                                 viewer=None)
+    #     milling_angle = self.doubleSpinBox_milling_angle.value()
 
-        # self.viewer.layers.unlink_layers(self.fm_image_layers)
+    #     arrs = generate_fib_view(image=self.fm_image,
+    #                              pixelsize=self.fm_md["pixel_size"],
+    #                              zstep=self.fm_md["zstep"],
+    #                              milling_angle=milling_angle,
+    #                              colours=self.fm_md["colours"],
+    #                              viewer=None)
 
-        # clear all fm image layers
-        for layer in self.fm_image_layers:
-            if layer in self.viewer.layers:
-                self.viewer.layers.remove(layer)
+    #     # self.viewer.layers.unlink_layers(self.fm_image_layers)
 
-        # # add each channel as a separate layer
-        # colors = self.fm_md.get("colours", None)
-        # for i, channel in enumerate(arrs):
-        #     if colors is not None:
-        #         color = colors[i]
-        #     else:
-        #         color = None
-        #     layer = self.viewer.add_image(
-        #     channel, 
-        #     name=f"FM Image Channel {i+1}", 
-        #     blending="additive", 
-        #     colormap=color
-        #     )
-        #     self.fm_image_layers.append(layer)
+    #     # clear all fm image layers
+    #     for layer in self.fm_image_layers:
+    #         if layer in self.viewer.layers:
+    #             self.viewer.layers.remove(layer)
 
-        # self.viewer.layers.link_layers(self.fm_image_layers)
-        
-
-        # TODO: add a way to restore back to the original views?
-        fib_view_layers = []
-        for i, arr in enumerate(arrs):
-            layer = self.viewer.add_image(arr, 
-                     name=f"Channel {i}", 
-                     scale=(1, 1), 
-                     blending="additive", 
-                     colormap=self.fm_md["colours"][i])
+    #     # TODO: add a way to restore back to the original views?
+    #     fib_view_layers = []
+    #     for i, arr in enumerate(arrs):
+    #         layer = self.viewer.add_image(arr,
+    #                  name=f"Channel {i}",
+    #                  scale=(1, 1),
+    #                  blending="additive",
+    #                  colormap=self.fm_md["colours"][i])
             
-            layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
-            fib_view_layers.append(layer)
+    #         layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
+    #         fib_view_layers.append(layer)
 
-        self.viewer.layers.link_layers(fib_view_layers)
+    #     self.viewer.layers.link_layers(fib_view_layers)
 
     def on_method_changed(self):
+
+        # TODO: warn user data will be reset when method is changed
 
         self.method_name = self.comboBox_method.currentText()
         logging.info(f"Method changed to: {self.method_name}")
 
         self.is_multi_point = self.method_name == "Multi-Point"
-        self.is_fib_view = self.method_name == "Drag & Drop"
+        self.is_drag_drop = self.method_name == "Drag & Drop"
 
         # display relevant panels
-        self.groupBox_controls.setVisible(self.is_fib_view)
-        self.groupBox_options.setVisible(self.is_fib_view)
-        self.groupBox_coordinates.setVisible(not self.is_fib_view)
-        self.groupBox_parameters.setVisible(not self.is_fib_view)
+        self.groupBox_controls.setVisible(self.is_drag_drop)
+        self.groupBox_options.setVisible(self.is_drag_drop)
+        self.groupBox_parameters.setVisible(self.is_drag_drop)
+        self.groupBox_coordinates.setVisible(not self.is_drag_drop)
     
-        if self.is_fib_view and self.fm_image_layers:
+        # display relevant controls
+        self.label_parameters_rotation_center.setVisible(self.is_multi_point)
+        self.spinBox_parameters_rotation_center_x.setVisible(self.is_multi_point)
+        self.spinBox_parameters_rotation_center_y.setVisible(self.is_multi_point)
+        self.spinBox_parameters_rotation_center_z.setVisible(self.is_multi_point)
+
+        if self.is_drag_drop and self.fm_image_layers:
             self.viewer.layers.link_layers(self.fm_image_layers)
         if self.is_multi_point and self.fm_image_layers:
             self.viewer.layers.unlink_layers(self.fm_image_layers)
@@ -319,8 +319,13 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             )
             self.coordinates_layer.events.data.connect(self.coordinates_updated_from_ui)
             self.pushButton_run_correlation.setStyleSheet("background-color: green")
+            self.label_instructions.setText(INSTRUCTIONS)
 
-        if self.is_fib_view:
+            if self.poi_coordinate_layer is not None and self.poi_coordinate_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.poi_coordinate_layer)
+                self.poi_coordinate_layer = None
+
+        if self.is_drag_drop:
             if self.coordinates_layer is not None:
                 if self.coordinates_layer in self.viewer.layers:
                     self.viewer.layers.remove(self.coordinates_layer)
@@ -331,7 +336,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             self.label_instructions.setVisible(False)
             self.pushButton_run_correlation.setStyleSheet("background-color: gray")
 
-            if self.poi_coordinate_layer is None:
+            if self.poi_coordinate_layer is None: # TODO: should this just be the results_layer???
                 self.poi_coordinate_layer = self.viewer.add_points(
                     [],
                     name="POI",
@@ -341,7 +346,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                     face_color="magenta",
                     blending="additive",
                     opacity=0.9,
-                )
+                ) # TODO: add to config
             elif self.poi_coordinate_layer in self.viewer.layers:
                 self.poi_coordinate_layer.data = []
 
@@ -351,6 +356,8 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                 fm_layer.events.mode.connect(self._on_layer_mode_changed)
 
             self.toggle_correlation_mode()
+
+            self.label_instructions.setText(DRAG_DROP_INSTRUCTIONS)
 
     def _on_layer_mode_changed(self, event):
         """Update the button text and color based on the layer mode"""
@@ -364,7 +371,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
     def toggle_correlation_mode(self):
 
-        if not self.is_fib_view:
+        if not self.is_drag_drop:
             return
         
         fm_layer = self.fm_image_layers[0]
@@ -372,12 +379,20 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         enabled = bool(fm_layer.mode == "transform")
 
         # select first fm layer
-        if enabled:
-            fm_layer.mode = "pan_zoom"
-        else:
-            fm_layer.mode = "transform"
+        fm_layer.mode = "pan_zoom" if enabled else "transform"
 
         self.viewer.layers.selection.active = fm_layer
+
+    def reset_transforms(self):
+
+        # can't have mip enabled when we reset, so disable it
+        if self.use_mip:
+            self.checkBox_use_mip.setChecked(False)
+            self.toggle_mip()
+
+        for fm_layer in self.fm_image_layers:
+            fm_layer: NapariImageLayer
+            fm_layer._reset_affine()
 
     def continue_pressed(self) -> None:
         # continue with the correlation
@@ -547,26 +562,38 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         if not filename:
             return
 
-        # load the fm image, set the data
-        try:
+        # # load the fm image, set the data
+        # try:
 
-            dialog = FluorescenceImportDialog(path=filename, parent=self)
-            _ = dialog.exec_()
+        #     dialog = FluorescenceImportDialog(path=filename, parent=self)
+        #     _ = dialog.exec_()
             
-            if not dialog.accepted_image:
-                return 
-            image = dialog.fm_image
+        #     if not dialog.accepted_image:
+        #         return 
+        #     image = dialog.fm_image
 
-            if image is None:
-                raise ValueError("No image data found")
+        #     if image is None:
+        #         raise ValueError("No image data found")
             
-            self.fm_image = image
-            self.fm_md = dialog.md
-            # fm_md: {"pixel_size": float, "zstep": float, "colours": List[str]}
+        #     self.fm_image = image
+        #     self.fm_md = dialog.md
+        #     # fm_md: {"pixel_size": float, "zstep": float, "colours": List[str]}
 
-        except Exception as e:
-            logging.error(f"Error loading FM Image: {e}")
-            return
+        # except Exception as e:
+        #     logging.error(f"Error loading FM Image: {e}")
+        #     return
+
+        self.wizard = open_import_wizard(filename=filename)
+        self.wizard.finished_signal.connect(self.handle_fm_finished_signal)
+
+    def handle_fm_finished_signal(self, data: dict):
+        self.fm_image = data["image"]
+        self.fm_md = {"pixel_size": data["pixel_size"], 
+                      "zstep": data["zstep"], 
+                      "colours": data["colours"]}
+        filename = data["filename"]
+
+        print("SOMETHING HAPPENED")
 
         if self.fm_image.ndim == 3:
             # add a channel dimension 
@@ -608,6 +635,12 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self._show_project_controls()  # TODO: change this to a callback on the data layer?
         self.viewer.reset_view()
+
+        try:
+            self.wizard.viewer.close()
+        except Exception as e:
+            logging.error(f"Error closing wizard: {e}")
+        self.wizard = None
 
     def _update_parameters(self):
         """Update the parameters for the correlation"""
@@ -661,7 +694,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         """Toggle the MIP of the fm image"""
         self.use_mip = not self.use_mip
 
-        if self.is_fib_view:
+        if self.is_drag_drop:
             self.viewer.layers.unlink_layers(self.fm_image_layers)
 
         # toggle mip
@@ -671,7 +704,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             else:
                 layer.data = self.fm_image[i]
 
-        if self.is_fib_view:
+        if self.is_drag_drop:
             self.viewer.layers.link_layers(self.fm_image_layers)
 
     def load_coordinates(self):
@@ -900,8 +933,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self._draw_error_data(reproj_3d)
 
     def update_poi_coordinate(self, layer, event):
+        """Update the point of interest for drag-drop method"""
 
-        if not self.is_fib_view:
+        if not self.is_drag_drop:
             return
         
         if "Control" not in event.modifiers:
@@ -927,9 +961,10 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         # convert to microscope coordinates
         shape = self.fib_image.shape
         pixelsize = self.fib_pixel_size
-        if pixelsize is None:
-            logging.error("FIB Pixel size not set")
-            pixelsize = 3.25e-8
+        if pixelsize is None or pixelsize == 0:
+            napari.utils.notifications.show_warning("FIB Pixel size not set, correlation result is not valid. " 
+                                                    "Please set the pixel-size manually") 
+            pixelsize = 0 #3.25e-8
         cy, cx = np.asarray(shape) // 2
 
         # distance from centre?
@@ -939,10 +974,38 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.poi_coordinate = (dx, dy)
         logging.info(f"POI Coordinate: {self.poi_coordinate}, pixelsize: {pixelsize}")
 
+        # save correlation result
+        results = {
+            "input": {
+                "method": "drag-drop",
+                "image_properties": {
+                    "fib_image_filename": os.path.basename(self.lineEdit_fib_image_path.text()),
+                    "fib_image_shape": list(self.fib_image.shape),
+                    "fib_pixel_size_um": self.fib_pixel_size * 1e6,
+                    "fm_image_filename": os.path.basename(self.lineEdit_fm_image_path.text()),
+                    "fm_image_shape": list(self.fm_image.shape),
+                }
+            },
+            "output": {
+                "poi": [
+                    {"image_px": [int(p) for p in position[::-1]],
+                    "px_m": list(self.poi_coordinate)
+                    }],
+            },
+            # TODO: save affine data from layer transforms?
+            "metadata": {
+                "project_path": self.path,
+                "data_path": self.path,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            }
+        }
+        save_correlation_data(results, self.path)
+
     def update_correlation_points(self, layer, event):
+        """Update correlation points for multi-point correlation"""
         # event.position  # (z, y, x)
 
-        if self.is_fib_view:
+        if self.is_drag_drop:
             return # don't update points in FIB view
 
         if "Control" not in event.modifiers and "Shift" not in event.modifiers:
@@ -1054,12 +1117,16 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.df = pd.DataFrame([], columns=DATAFRAME_PROPERTIES["columns"])
 
         # remove results
-        if self.results_layer is not None:
+        if self.results_layer is not None and self.results_layer in self.viewer.layers:
             self.viewer.layers.remove(self.results_layer)
             self.results_layer = None
-        if self.reprojection_layer is not None:
+        if self.reprojection_layer is not None and self.reprojection_layer in self.viewer.layers:
             self.viewer.layers.remove(self.reprojection_layer)
             self.reprojection_layer = None
+        # remove the corresponding points
+        if self.line_layer is not None and self.line_layer in self.viewer.layers:
+            self.viewer.layers.remove(self.line_layer)
+            self.line_layer = None
 
         if self.coordinates_layer is not None:
             self._dataframe_updated()

@@ -8,6 +8,7 @@ import napari.utils
 import numpy as np
 from napari.qt.threading import thread_worker
 from PyQt5 import QtWidgets
+from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import pyqtSignal
 
 from tdct.generate import acquire_fib_view_screenshots
@@ -36,6 +37,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         self.pixelsize: float = None
         self.zstep: float = None
         self.is_fib_view: bool = False
+        self.filename: str = None
         self.setWindowTitle("Import Fluorescence Image")
 
         self.setup_connections()
@@ -43,6 +45,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
     def setup_connections(self):
         self.pushButton_imaging_view.clicked.connect(self.on_imaging_view)
         self.pushButton_milling_view.clicked.connect(self.on_milling_view)
+        self.pushButton_confirm_view.clicked.connect(self.confirm_fib_view)
 
         self.doubleSpinBox_pixelsize_xy.valueChanged.connect(self.on_scale_changed)
         self.doubleSpinBox_zstep_size.valueChanged.connect(self.on_scale_changed)
@@ -79,8 +82,8 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         self.progressBar_interpolation.setVisible(False)
 
         self.currentIdChanged.connect(self.on_id_changed)
-        self.finished.connect(self.on_finished)
-
+        self.accepted.connect(self.on_accepted)
+        self.rejected.connect(self.on_cancel)
 
         self.pushButton_export_image.clicked.connect(self.on_export)
 
@@ -144,10 +147,9 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         # else: use .data directly
         # query: initial metadata?
 
-        arrs = acquire_fib_view_screenshots(self.viewer)
+        # TODO: add support for exporting images with correct metadata
 
-        # self.continue_pressed_signal.emit({"fib_view": arrs})
-        print(f"continue pressed: 'fib_view': {arrs.shape}")
+        pass
 
     def on_imaging_view(self):
         self.viewer.dims.ndisplay = 3
@@ -161,10 +163,33 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         # TODO: display the stage-tilt, based off pre-tilt calculation
 
     def confirm_fib_view(self):
+        """Confirm the fib-view and overwrite the current image"""
+        milling_angle = self.doubleSpinBox_milling_angle.value()            # deg
+
+        msg = QMessageBox(parent=self)
+        msg.setWindowTitle("Confirm FIB-View")
+        msg.setText(f"Are you sure you want to use the current view ({milling_angle:.1f}°) ? This will overwrite the current image.")
+        msg.setIcon(QMessageBox.Question)
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.exec_()
+
+        response = (
+            True
+            if (msg.clickedButton() == msg.button(QMessageBox.Yes))
+            or (msg.clickedButton() == msg.button(QMessageBox.Ok))
+            else False
+        )
+
+        if not response:
+            return
         # overwrite the exising image with the fib-view
         # set the new pixel size
         self.is_fib_view = True
-        pass
+        arrs = acquire_fib_view_screenshots(self.viewer)
+        self.load_image(image=arrs,
+                        pixelsize=self.pixelsize,
+                        zstep=self.zstep,
+                        colours=self.colours)
 
     def update_progress(self, ddict: dict):
         val = ddict["value"]
@@ -233,28 +258,32 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
 
         self.image_interp = image_interp
 
-    def on_finished(self):
-        print("finished")
-        # TODO: emit the final data, containing the image and metadata for main app
-        logging.info("FMImportWizard finished")
+    def on_accepted(self):
 
+        # TODO: emit the final data, containing the image and metadata for main app
+
+        # TODO: get the colours from the actual layers?
         self.finished_signal.emit({"image": self.image,
-                                   "pixelsize": self.pixelsize,
+                                   "pixel_size": self.pixelsize,
                                    "zstep": self.zstep,
                                    "colours" : self.colours,
-                                   "is_fib_view": self.is_fib_view})
-        # TODO: get the colours from the actual layers?
+                                   "is_fib_view": self.is_fib_view,
+                                   "filename": self.filename})
 
         self.viewer.close()
 
     def on_id_changed(self, page_id: int):
-        print(f"id changed: {page_id}")
+        logging.debug(f"id changed: {page_id}")
 
-    def open_image(self, path: str):
-        image, md = load_and_parse_fm_image(path)
+    def on_cancel(self):
+        logging.debug("cancel pressed")
+        self.viewer.close()
 
-        self.path = path
-        self.label_import_header.setText(f"File: {os.path.basename(path)}")
+    def open_image(self, filename: str):
+        image, md = load_and_parse_fm_image(filename)
+
+        self.filename = filename
+        self.label_import_header.setText(f"File: {os.path.basename(filename)}")
 
         self.load_image(image=image,
                       pixelsize=md.get("pixel_size", 0.0),
@@ -263,12 +292,12 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
 
 # TODO: add napari reader func??? -> requires plugin engine
 
-def open_import_wizard(path: str):
+def open_import_wizard(filename: str) -> FMImportWizard:
     viewer = napari.Viewer(title="FM Import Wizard")
     wizard = FMImportWizard(viewer=viewer)
-    wizard.open_image(path)
+    wizard.open_image(filename)
     viewer.window.add_dock_widget(wizard, name="Import Wizard")
-    napari.run(max_loop_level = 2)
+    return wizard
 
 def main():
 

@@ -72,7 +72,9 @@ def acquire_fib_view_screenshots(viewer: napari.Viewer) -> list[np.ndarray]:
 
         # convert from RGb to float32
         sc = sc.astype(np.float32) / 255
-        arrs.append(sc[:, :, 0]) # 4D->2D
+        arr2d = sc[:, :, 0]                 # RGB->2D
+        arr = np.expand_dims(arr2d, axis=0) # 2D->3D
+        arrs.append(arr) 
 
         # TODO: need to crop extra black space
 

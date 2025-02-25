@@ -101,6 +101,12 @@ To edit points:
 \tPress 'Z' to enter Pan/Zoom Mode
 """
 
+DRAG_DROP_INSTRUCTIONS = """
+Enable Correlation Mode to drag, drop and rescale images
+
+Press Ctrl + Left Click to add a point of interest once correlated.
+"""
+
 # add dynamic instructions for different steps
 
 INSTRUCTIONS2 = """
