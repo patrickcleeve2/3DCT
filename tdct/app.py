@@ -92,6 +92,7 @@ DEV_FM_IMAGE = "test-image2.ome.tiff"
 
 class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
+    continue_pressed_signal = pyqtSignal()
 
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
@@ -205,11 +206,12 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.pushButton_run_correlation.setStyleSheet("background-color: green")
         self.label_instructions.setText(INSTRUCTIONS)
 
-        self.pushButton_continue.setVisible(False) # TODO: this should close the window, return results to main
+        self.pushButton_continue.setVisible(True) # TODO: this should close the window, return results to main
         self.pushButton_continue.clicked.connect(self.continue_pressed)
+        self.continue_pressed_signal.connect(self.handle_continue_signal)
 
         # method change
-        self.comboBox_method.addItems(["Multi-Point", "FIB-View"])
+        self.comboBox_method.addItems(["Multi-Point", "Drag & Drop"])
         self.comboBox_method.currentIndexChanged.connect(self.on_method_changed)
         self.on_method_changed()
 
@@ -222,9 +224,11 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         milling_angle = self.doubleSpinBox_milling_angle.value()
 
-        arrs = generate_fib_view(image=self.fm_image, 
-                                 md=self.fm_md, 
-                                 milling_angle=milling_angle, 
+        arrs = generate_fib_view(image=self.fm_image,
+                                 pixelsize=self.fm_md["pixel_size"],
+                                 zstep=self.fm_md["zstep"],
+                                 milling_angle=milling_angle,
+                                 colours=self.fm_md["colours"],
                                  viewer=None)
 
         # self.viewer.layers.unlink_layers(self.fm_image_layers)
@@ -272,7 +276,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         logging.info(f"Method changed to: {self.method_name}")
 
         self.is_multi_point = self.method_name == "Multi-Point"
-        self.is_fib_view = self.method_name == "FIB-View"
+        self.is_fib_view = self.method_name == "Drag & Drop"
 
         # display relevant panels
         self.groupBox_controls.setVisible(self.is_fib_view)
@@ -344,8 +348,19 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             self.fib_image_layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
             for fm_layer in self.fm_image_layers:
                 fm_layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
+                fm_layer.events.mode.connect(self._on_layer_mode_changed)
 
             self.toggle_correlation_mode()
+
+    def _on_layer_mode_changed(self, event):
+        """Update the button text and color based on the layer mode"""
+        transform_mode = event.mode == "transform"
+        if transform_mode:
+            self.pushButton_toggle_correlation_mode.setStyleSheet("background-color: orange")
+            self.pushButton_toggle_correlation_mode.setText("Correlation Mode Enabled")
+        else:
+            self.pushButton_toggle_correlation_mode.setStyleSheet("background-color: green")
+            self.pushButton_toggle_correlation_mode.setText("Enable Correlation Mode")
 
     def toggle_correlation_mode(self):
 
@@ -367,6 +382,12 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     def continue_pressed(self) -> None:
         # continue with the correlation
         logging.info("Continue Pressed")
+
+        self.continue_pressed_signal.emit()
+
+    def handle_continue_signal(self):
+
+        logging.info("CONTINUE SIGNAL PRESSED")
 
     def _show_project_controls(self):
         self.images_loaded = self.fib_image is not None and self.fm_image is not None

@@ -12,7 +12,6 @@ from tdct.io import load_and_parse_fm_image
 
 # TODO: save interpolated image
 # TODO: disable interaction while interpolating
-# TODO: parse colour from image metadata
 
 class FluorescenceImportDialog(QDialog, tdct_fm_import_dialog.Ui_Dialog):
     progress_update = pyqtSignal(dict)

@@ -129,8 +129,8 @@ def load_and_parse_fib_image(filename: str) -> tuple[np.ndarray, float]:
 
     return image, pixel_size
 
-def rgb_to_color_name(rgb):
-    colors = {
+
+RGB_TO_COLOUR = {
         (255, 0, 0): "red",
         (0, 255, 0): "green",
         (0, 0, 255): "blue",
@@ -140,6 +140,11 @@ def rgb_to_color_name(rgb):
         (255, 255, 255): "gray",
         (0, 0, 0): "black"
     }
+COLOUR_TO_RGB = {v: k for k, v in RGB_TO_COLOUR.items()}
+
+
+def rgb_to_color_name(rgb):
+    colors=  RGB_TO_COLOUR
 
     # Find the color with the minimum Euclidean distance
     closest_color = min(colors.keys(), key=lambda color: sum((a-b)**2 for a, b in zip(rgb, color)))
@@ -184,4 +189,3 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     return image, {"pixel_size": pixel_size, 
                    "zstep": zstep, 
                    "colours": colours}
-

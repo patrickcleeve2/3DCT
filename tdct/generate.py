@@ -1,28 +1,35 @@
+from typing import List
+
 import napari
 import numpy as np
-
+from napari.layers import Image as NapariImageLayer
 
 def generate_fib_view(image: np.ndarray, 
-                      md: dict, 
+                      pixelsize: float,
+                      zstep: float,
                       milling_angle: float, 
-                      rotation: float = 0, 
+                      rotation: float = 0,
+                      colours: List[str] = None,
                       viewer: napari.Viewer = None) -> np.ndarray:
     """Generate the FIB view from the FM image stack
     Args:
         image (np.ndarray): 4D image stack (CZYX)
-        md (dict): metadata
+        pixelsize: (float): X/Y image pixelsize
+        zstep (float): z step size between image planes
         milling_angle (float): milling angle
         rotation (float, optional): rotation around z-axis. Defaults to 0."""
     if viewer is None:
         viewer = napari.Viewer(title="FIB View Synthesis")
         napari.run()
 
-    pz = md["zstep"]
-    px = md["pixel_size"]
+    if colours is None:
+        colours = ["gray"] * image.shape[0]
+
+    pz, px = zstep, pixelsize
 
     for i in range(image.shape[0]):
         arr = image[i]
-        colour = md["colours"][i]
+        colour = colours[i]
         viewer.add_image(data=arr,
                          name=f"Channel {i}",
                          scale=(pz, px, px),
@@ -49,7 +56,7 @@ def acquire_fib_view_screenshots(viewer: napari.Viewer) -> list[np.ndarray]:
     Returns:
         list[np.ndarray]: list of fib-view array views"""
     
-    layers = viewer.layers
+    layers: List[NapariImageLayer] = viewer.layers
     cmaps = [l.colormap for l in layers]
     arrs = []
     viewer.scale_bar.visible = False
@@ -77,4 +84,4 @@ def acquire_fib_view_screenshots(viewer: napari.Viewer) -> list[np.ndarray]:
 
     # viewer.close()
 
-    return arrs
+    return np.asarray(arrs)

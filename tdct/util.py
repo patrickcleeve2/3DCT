@@ -253,7 +253,7 @@ def multi_channel_interpolation(
     image: np.ndarray,
     pixelsize_in: float,
     pixelsize_out: float,
-    method: str = "fast-cubic",
+    method: str = "cubic",
     parent_ui=None,
 ) -> np.ndarray:
     """Interpolate a multi-channel z-stack (CZYX) along the z-axis
