@@ -102,11 +102,12 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
     continue_pressed_signal = pyqtSignal(dict)
 
-    def __init__(self, viewer: napari.Viewer):
+    def __init__(self, viewer: napari.Viewer, parent_ui: QtWidgets.QWidget = None):
         super().__init__()
         self.setupUi(self)
 
         self.viewer = viewer
+        self.parent_ui = parent_ui
 
         self.path = None
         self.project_loaded: bool = False
@@ -198,6 +199,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.spinBox_parameters_rotation_center_z.valueChanged.connect(
             self._update_parameters
         )
+        self.doubleSpinBox_parameters_pixel_size.setSuffix(" um")
 
         # menu actions
         self.actionLoad_Load_Coordinates_Old.triggered.connect(self.load_coordinates)
@@ -214,20 +216,18 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.pushButton_run_correlation.setStyleSheet("background-color: green")
         self.label_instructions.setText(INSTRUCTIONS)
 
-        self.pushButton_continue.setVisible(True) # TODO: this should close the window, return results to main
+        self.pushButton_continue.setVisible(self.parent_ui is not None)
         self.pushButton_continue.clicked.connect(self.continue_pressed)
         self.continue_pressed_signal.connect(self.handle_continue_signal)
-
+        self.pushButton_continue.setStyleSheet("background-color: blue")
         # method change
         self.comboBox_method.addItems(["Multi-Point", "Drag & Drop"])
         self.comboBox_method.currentIndexChanged.connect(self.on_method_changed)
         self.on_method_changed()
 
-        # self.pushButton_add_poi()
         self.pushButton_toggle_correlation_mode.clicked.connect(self.toggle_correlation_mode)
         self.pushButton_reset_transform.clicked.connect(self.reset_transforms)
 
-        self.doubleSpinBox_parameters_pixel_size.setSuffix(" um")
 
     def on_method_changed(self):
 
@@ -296,8 +296,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                 self.coordinates_layer = None
             self.clear_coordinates()
 
-            self.pushButton_continue.setVisible(True)
-            self.label_instructions.setVisible(False)
+            self.label_instructions.setVisible(False) # TODO: add dynamic-instructions
             self.pushButton_run_correlation.setStyleSheet("background-color: gray")
 
             if self.poi_coordinate_layer is None: # TODO: should this just be the results_layer???
@@ -372,8 +371,46 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                                              QtWidgets.QMessageBox.No)
 
         if ret == QtWidgets.QMessageBox.Yes:
+            self.remove_correlation_layers()
             self.continue_pressed_signal.emit(info)
-            self.viewer.close()
+            self.close()
+
+    def remove_correlation_layers(self):
+        """Remove all layers associated with correlation (for embedded workflow)"""
+        if self.line_layer is not None:
+            if self.line_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.line_layer)
+                self.line_layer = None
+
+        if self.results_layer is not None:
+            if self.results_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.results_layer)
+                self.results_layer = None
+
+        if self.reprojection_layer is not None:
+            if self.reprojection_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.reprojection_layer)
+                self.reprojection_layer = None
+        if self.poi_coordinate_layer is not None:
+            if self.poi_coordinate_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.poi_coordinate_layer)
+                self.poi_coordinate_layer = None
+
+        if self.coordinates_layer is not None:
+            if self.coordinates_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.coordinates_layer)
+                self.coordinates_layer = None
+
+        self.viewer.layers.unlink_layers(self.fm_image_layers) 
+        for layer in self.fm_image_layers:
+            if layer in self.viewer.layers:
+                self.viewer.layers.remove(layer)
+        self.fm_image_layers = []
+
+        if self.fib_image_layer is not None:
+            if self.fib_image_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.fib_image_layer)
+                self.fib_image_layer = None
 
     def handle_continue_signal(self, ddict: dict):
 
@@ -832,7 +869,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             "color": "white",
             "anchor": "upper_right",
         }
-        self.results_layer = self.viewer.add_points(
+        self.results_layer = self.viewer.add_points( # TODO: consolidate this and poi_coordinate_layer, they display the same information
             dat,
             name=RESULTS_LAYER_PROPERTIES["name"],
             ndim=RESULTS_LAYER_PROPERTIES["ndim"],
@@ -914,8 +951,8 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             self.tableWidget_results_error.setItem(i, 0, QtWidgets.QTableWidgetItem(dx))
             self.tableWidget_results_error.setItem(i, 1, QtWidgets.QTableWidgetItem(dy))
 
-
         self._draw_error_data(reproj_3d)
+        self.display_milling_stages()
 
     def update_poi_coordinate(self, layer, event):
         """Update the point of interest for drag-drop method"""
@@ -986,12 +1023,46 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         }
         save_correlation_data(results, self.path)
 
+        self.display_milling_stages()
+
+    def display_milling_stages(self):
+        """Attempt to display milling stages on the correlated image."""
+        try:
+            from fibsem.milling.patterning.patterns2 import FiducialPattern
+            from fibsem.structures import Point
+            from fibsem.ui.napari.patterns import draw_milling_patterns_in_napari
+
+            milling_stages = self.parent_ui.milling_stages
+
+            poi = self.poi_coordinate
+            if poi is None:
+                return
+            point = Point(x=poi[0], y=poi[1])
+
+            for milling_stage in milling_stages:
+                # don't move fiducial patterns
+                if isinstance(milling_stage.pattern, FiducialPattern):
+                    continue
+                milling_stage.pattern.point = point
+
+            milling_pattern_layers = draw_milling_patterns_in_napari(
+                    viewer=self.viewer,
+                    image_layer=self.fib_image_layer,
+                    milling_stages=milling_stages,
+                    pixelsize=self.fib_pixel_size,
+                    draw_crosshair=True,
+                    )
+            for layer in milling_pattern_layers:
+                self.viewer.layers[layer].visible = True
+        except Exception as e:
+           logging.error(f"Error displaying milling stages: {e}")
+
     def update_correlation_points(self, layer, event):
         """Update correlation points for multi-point correlation"""
         # event.position  # (z, y, x)
 
         if self.is_drag_drop:
-            return # don't update points in FIB view
+            return # don't update points in drag-drop view
 
         if "Control" not in event.modifiers and "Shift" not in event.modifiers:
             return
