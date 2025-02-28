@@ -100,7 +100,7 @@ DEV_FM_IMAGE = "test-image2.ome.tiff"
 
 class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
     close_signal = pyqtSignal()
-    continue_pressed_signal = pyqtSignal()
+    continue_pressed_signal = pyqtSignal(dict)
 
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
@@ -126,14 +126,14 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self.df = pd.DataFrame([], columns=DATAFRAME_PROPERTIES["columns"])
         self.correlation_results: dict = None
-        self.poi_coordinate: Tuple[float, float] = (0, 0)
+        self.poi_coordinate: Tuple[float, float] = (0, 0) # TODO: migrate to Point
 
         # add a point layer for the coordinates (FIB, FM, POI)
         self.coordinates_layer = None
-        self.line_layer = None  # corresponding points
-        self.results_layer = None  # points of interest results
-        self.reprojection_layer = None  # correlation error data
-        self.poi_coordinate_layer = None  # points of interest for fib-view
+        self.line_layer = None              # corresponding points
+        self.results_layer = None           # points of interest results
+        self.reprojection_layer = None      # correlation error data
+        self.poi_coordinate_layer = None    # points of interest for drag-drop
 
         self.setup_connections()
         self._show_project_controls()
@@ -229,39 +229,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self.doubleSpinBox_parameters_pixel_size.setSuffix(" um")
 
-    # def _generate_fib_view(self):
-    #     logging.info("Generate FIB View")
-
-    #     milling_angle = self.doubleSpinBox_milling_angle.value()
-
-    #     arrs = generate_fib_view(image=self.fm_image,
-    #                              pixelsize=self.fm_md["pixel_size"],
-    #                              zstep=self.fm_md["zstep"],
-    #                              milling_angle=milling_angle,
-    #                              colours=self.fm_md["colours"],
-    #                              viewer=None)
-
-    #     # self.viewer.layers.unlink_layers(self.fm_image_layers)
-
-    #     # clear all fm image layers
-    #     for layer in self.fm_image_layers:
-    #         if layer in self.viewer.layers:
-    #             self.viewer.layers.remove(layer)
-
-    #     # TODO: add a way to restore back to the original views?
-    #     fib_view_layers = []
-    #     for i, arr in enumerate(arrs):
-    #         layer = self.viewer.add_image(arr,
-    #                  name=f"Channel {i}",
-    #                  scale=(1, 1),
-    #                  blending="additive",
-    #                  colormap=self.fm_md["colours"][i])
-            
-    #         layer.mouse_drag_callbacks.append(self.update_poi_coordinate)
-    #         fib_view_layers.append(layer)
-
-    #     self.viewer.layers.link_layers(fib_view_layers)
-
     def on_method_changed(self):
 
         # TODO: warn user data will be reset when method is changed
@@ -288,9 +255,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             self.viewer.layers.link_layers(self.fm_image_layers)
         if self.is_multi_point and self.fm_image_layers:
             self.viewer.layers.unlink_layers(self.fm_image_layers)
-
-        # continue?
-        # generate fib-view
 
         # remove callbacks
         try:
@@ -398,11 +362,23 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         # continue with the correlation
         logging.info("Continue Pressed")
 
-        self.continue_pressed_signal.emit()
+        info = {"poi": self.poi_coordinate}
 
-    def handle_continue_signal(self):
+        msg = "Finish correlation and continue?"
+        ret = QtWidgets.QMessageBox.question(self,
+                                             'Finish Correlation',
+                                             msg,
+                                             QtWidgets.QMessageBox.Yes, 
+                                             QtWidgets.QMessageBox.No)
+
+        if ret == QtWidgets.QMessageBox.Yes:
+            self.continue_pressed_signal.emit(info)
+            self.viewer.close()
+
+    def handle_continue_signal(self, ddict: dict):
 
         logging.info("CONTINUE SIGNAL PRESSED")
+        logging.info(f"POI: {ddict['poi']}")
 
     def _show_project_controls(self):
         self.images_loaded = self.fib_image is not None and self.fm_image is not None
@@ -784,10 +760,19 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         logging.info(f"FM Coordinates: {fm_coords}")
         logging.info(f"POI Coordinates: {poi_coords}")
 
-        fm_image = self.fm_image[0]  # only use the first channel (for shape, assume all are the same?)
-        fib_image = self.fib_image
-        fib_pixel_size = self.fib_pixel_size
-        rotation_center = self.rotation_center
+        fm_image: np.ndarray = self.fm_image[0]  # only use the first channel (for shape, assume all are the same?)
+        fib_image: np.ndarray = self.fib_image
+        fib_pixel_size: float = self.fib_pixel_size
+        rotation_center: Tuple[float, float, float] = self.rotation_center
+
+        if fib_pixel_size is None or fib_pixel_size == 0:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Unknown FIB Pixel Size",
+                "FIB Pixel Size must be set before correlating.",
+                QtWidgets.QMessageBox.Ok,
+            )
+            return
 
         # standard resolutions: (old), needs to be modernised
         # standard_res = [(442, 512), (884, 1024), (1768, 2048), (3536, 4096), (7072, 8192)]

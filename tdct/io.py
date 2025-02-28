@@ -155,7 +155,7 @@ def rgb_to_color_name(rgb):
 def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     image = tff.imread(path)
 
-    zstep, pixel_size, colours = None, None, None
+    zstep, pixel_size, colours, ome = None, None, None, None
     try:
         ome = from_tiff(path)
         pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
@@ -188,4 +188,5 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
 
     return image, {"pixel_size": pixel_size, 
                    "zstep": zstep, 
-                   "colours": colours}
+                   "colours": colours,
+                   "ome": ome}
