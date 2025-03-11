@@ -156,6 +156,7 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     image = tff.imread(path)
 
     zstep, pixel_size, colours, ome = None, None, None, None
+    x, y, z = None, None, None
     try:
         ome = from_tiff(path)
         pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
@@ -174,6 +175,20 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
         zstep *= _unit_map[zstep_unit]
 
         colours = [channel.color.as_rgb_tuple() for channel in ome.images[0].pixels.channels]
+
+        planes = ome.images[0].pixels.planes
+        xs, ys, zs = [], [], []
+        exp_times = []
+        for plane in planes:
+            xs.append(plane.position_x) # query unit?
+            ys.append(plane.position_y)
+            zs.append(plane.position_z)
+            exp_times.append(plane.exposure_time)
+
+        x = np.mean(xs, dtype=np.float32)
+        y = np.mean(ys, dtype=np.float32)
+        z = np.mean(zs, dtype=np.float32)
+        exp_time = np.mean(exp_times, dtype=np.float32)
     except Exception as e:
         logging.debug(f"Failed to extract metadata: {e}")
 
@@ -189,4 +204,9 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     return image, {"pixel_size": pixel_size, 
                    "zstep": zstep, 
                    "colours": colours,
-                   "ome": ome}
+                   "ome": ome,
+                   "x": x,
+                   "y": y,
+                   "z": z,
+                   "exposure_time": exp_time
+                   }
