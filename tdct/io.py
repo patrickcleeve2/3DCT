@@ -1,12 +1,21 @@
 import csv
 import logging
-
 from typing import Tuple
 
 import numpy as np
 import tifffile as tff
 from ome_types import from_tiff
-from ome_types.model.simple_types import UnitsLength
+from ome_types.model import (
+    OME,
+    Pixels,
+    Pixels_DimensionOrder,
+    Plane,
+    TiffData,
+    UnitsLength,
+)
+from ome_types.model import (
+    Image as OMEImage,
+)
 from PIL import Image
 
 ############# PARSER FUNCTIONS #############
@@ -151,46 +160,62 @@ def rgb_to_color_name(rgb):
 
     return colors[closest_color]
 
+_unit_map = {
+    UnitsLength.NANOMETER: 1e-9,
+    UnitsLength.MICROMETER: 1e-6,
+    UnitsLength.MILLIMETER: 1e-3,
+    UnitsLength.METER: 1,
+}
 
 def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     image = tff.imread(path)
 
     zstep, pixel_size, colours, ome = None, None, None, None
     x, y, z = None, None, None
+    nc, nz, ny, nx = None, None, None, None
+    exposure_times = {}
     try:
         ome = from_tiff(path)
-        pixel_size = ome.images[0].pixels.physical_size_x # assume isotropic
-        zstep = ome.images[0].pixels.physical_size_z
+        pixels_md = ome.images[0].pixels
+        pixel_size = pixels_md.physical_size_x # assume isotropic
+        zstep = pixels_md.physical_size_z
 
         # convert to SI (if required)
-        pixel_size_unit = ome.images[0].pixels.physical_size_x_unit
-        zstep_unit = ome.images[0].pixels.physical_size_z_unit
-        _unit_map = {
-            UnitsLength.NANOMETER: 1e-9,
-            UnitsLength.MICROMETER: 1e-6,
-            UnitsLength.MILLIMETER: 1e-3,
-            UnitsLength.METER: 1,
-        }
+        pixel_size_unit = pixels_md.physical_size_x_unit
+        zstep_unit = pixels_md.physical_size_z_unit
+
         pixel_size *= _unit_map[pixel_size_unit]
         zstep *= _unit_map[zstep_unit]
 
-        colours = [channel.color.as_rgb_tuple() for channel in ome.images[0].pixels.channels]
+        colours = [channel.color.as_rgb_tuple() for channel in pixels_md.channels]
 
-        planes = ome.images[0].pixels.planes
+        # image dimensions
+        nc = pixels_md.size_c
+        nz = pixels_md.size_z
+        ny = pixels_md.size_y
+        nx = pixels_md.size_x
+
         xs, ys, zs = [], [], []
-        exp_times = []
-        for plane in planes:
+        for plane in pixels_md.planes:
             xs.append(plane.position_x) # query unit?
             ys.append(plane.position_y)
             zs.append(plane.position_z)
-            exp_times.append(plane.exposure_time)
+
+            exposure_times[plane.the_c] = plane.exposure_time # assume constant for all planes
 
         x = np.mean(xs, dtype=np.float32)
         y = np.mean(ys, dtype=np.float32)
         z = np.mean(zs, dtype=np.float32)
-        exp_time = np.mean(exp_times, dtype=np.float32)
     except Exception as e:
         logging.debug(f"Failed to extract metadata: {e}")
+
+    # check if shape is CZYX, matches nc, nz, ny, nx
+    # this is required because tifffile does not always return the correct shape, when there is z=1
+    if nc is not None:
+        if image.shape != (nc, nz, ny, nx):
+            logging.warning(f"Image shape {image.shape} does not match metadata shape {(nc, nz, ny, nx)}")
+            # reshape to match metadata shape
+            image = image.reshape((nc, nz, ny, nx))
 
     # convert to 4D if necessary
     if image.ndim == 3:
@@ -202,11 +227,135 @@ def load_and_parse_fm_image(path: str) -> Tuple[np.ndarray, dict]:
     colours = [rgb_to_color_name(colour) for colour in colours]
 
     return image, {"pixel_size": pixel_size, 
-                   "zstep": zstep, 
-                   "colours": colours,
+                   "zstep": zstep, "colours": colours,
+                   "x": x, "y": y, "z": z, "exposure_time": exposure_times,
                    "ome": ome,
-                   "x": x,
-                   "y": y,
-                   "z": z,
-                   "exposure_time": exp_time
                    }
+
+def get_z_plane_positions(pos_z: float, nz: int, zstep: float) -> np.ndarray:
+    """Calculate the position of the z-planes based on the central plane position, number of planes, and z-step size.
+    Assumes that the central plane is at pos_z, with half planes above and half below.
+    NOTE: if an even number of planes is given, the central plane is at pos_z - zstep/2.
+    Args:
+        pos_z (float): Central plane position.
+        nz (int): Number of planes.
+        zstep (float): Z-step size.
+    Returns:
+        np.ndarray: Array of z-plane positions.
+    """
+    z_positions = np.linspace(pos_z - (nz - 1) * zstep / 2,
+                            pos_z + (nz - 1) * zstep / 2,
+                            nz)
+    assert len(z_positions) == nz
+    return z_positions
+
+def write_ome_tiff(image: np.ndarray, md: dict, filename: str) -> str:
+    """Write OME-TIFF file with metadata.
+    Args:
+        image (np.ndarray): Image data in CZYX format.
+        md (dict): Metadata dictionary containing OME and other information.
+            Keys include:
+                - "x": X position of the image
+                - "y": Y position of the image
+                - "z": Z position of the image
+                - "zstep": Z step size
+                - "pixel_size": Pixel size in meters (x, y)
+                - "exposure_time": Exposure time for each channel
+                - "ome": OME metadata object
+                - "colours": List of colors for each channel
+        filename (str): Output filename for the OME-TIFF file.
+    Returns:
+        str: Path to the saved OME-TIFF file.
+    """
+    # extract metadata
+    nc, nz, ny, nx = image.shape  # CZYX
+    pos_x, pos_y = md["x"], md["y"]
+    ome: OME = md["ome"]
+    zstep = md["zstep"]     # pixelsize_z
+    pos_z = md["z"]         # pos_z
+
+    # compute z-plane positions
+    z_positions = get_z_plane_positions(pos_z=pos_z, nz=nz, zstep=zstep)
+
+    channels = []
+    tiff_data_blocks = []
+    planes = []
+
+    ifd = 0
+    for c in range(nc):
+
+        # Note: this might need to change
+        ch = ome.images[0].pixels.channels[c]
+        channels.append(ch)
+
+        exposure_time = md["exposure_time"][c]
+        for z in range(nz):
+
+            plane = Plane(
+                the_z=z,
+                the_c=c,
+                the_t=0,  # expand to use time dimension
+                position_x=pos_x,
+                position_y=pos_y,
+                position_z=z_positions[z],
+                position_x_unit=UnitsLength.METER,
+                position_y_unit=UnitsLength.METER,
+                position_z_unit=UnitsLength.METER,
+                exposure_time=exposure_time,
+            )
+            planes.append(plane)
+
+            tiff_data = TiffData(ifd=ifd, first_c=c, first_z=z, plane_count=1)
+            tiff_data_blocks.append(tiff_data)
+
+            ifd+= 1
+
+    dtype = image.dtype.name
+    if image.dtype.name in "float32":
+        dtype = "float"
+        # TODO: fix dtype for exported fib-view screenshot makes it float32? convert to uint16?
+
+    ome_image = OMEImage(
+        id=ome.images[0].id,
+        name=ome.images[0].name,
+        description=ome.images[0].description,
+        acquisition_date=ome.images[0].acquisition_date,
+        pixels=Pixels(
+            id=ome.images[0].pixels.id,
+            type=dtype,
+            size_x=nx,
+            size_y=ny,
+            size_z=nz,
+            size_c=nc,
+            size_t=1,  # single timepoint
+            dimension_order=Pixels_DimensionOrder.XYZCT,
+            physical_size_x=md["pixel_size"],
+            physical_size_y=md["pixel_size"],
+            physical_size_z=zstep,
+            physical_size_x_unit=UnitsLength.METER,
+            physical_size_y_unit=UnitsLength.METER,
+            physical_size_z_unit=UnitsLength.METER,
+            channels=[ch for ch in ome.images[0].pixels.channels],
+            planes=planes,
+            tiff_data_blocks=tiff_data_blocks
+        )
+    )
+
+    ome_md = OME(
+        images=[ome_image],
+        instruments=ome.instruments,
+        structured_annotations=ome.structured_annotations,
+    )
+
+    # convert OME metadata to XML, and validate
+    ome_xml = ome_md.to_xml()
+    assert tff.OmeXml.validate(ome_xml), "OME XML is not valid"
+
+    # reshape image to 5D for tifffile (CZYX -> TCZYX)
+    tifffile_image = image.reshape(1, image.shape[0], image.shape[1], image.shape[2], image.shape[3])
+
+    with tff.TiffWriter(filename) as tif:
+        tif.write(data=tifffile_image, contiguous=True)
+        tif.overwrite_description(ome_xml)
+
+    return filename

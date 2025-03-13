@@ -5,6 +5,7 @@ from typing import List
 import napari
 import napari.plugins
 import napari.utils
+import napari.utils.notifications
 import numpy as np
 from napari.qt.threading import thread_worker
 from PyQt5 import QtWidgets
@@ -12,7 +13,7 @@ from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import pyqtSignal
 
 from tdct.generate import acquire_fib_view_screenshots
-from tdct.io import load_and_parse_fm_image
+from tdct.io import load_and_parse_fm_image, write_ome_tiff
 from tdct.ui.qt import tdct_fm_import_wizard as tdct_wizard
 from tdct.util import INTERPOLATION_METHODS, multi_channel_interpolation
 
@@ -38,6 +39,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         self.zstep: float = None
         self.is_fib_view: bool = False
         self.filename: str = None
+        self.md: dict = None
         self.setWindowTitle("Import Fluorescence Image")
 
         self.setup_connections()
@@ -149,7 +151,31 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
 
         # TODO: add support for exporting images with correct metadata
 
-        pass
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                parent=self,
+                caption="Export Image as OME-TIFF",
+                directory=os.path.dirname(self.filename),
+                filter="OME-TIFF (*.ome.tiff);;All Files (*)",
+            )
+
+        # no filename selected
+        if not filename:
+            return
+
+        # update metadata
+        self.md["pixel_size"] = self.pixelsize
+        self.md["zstep"] = self.zstep
+        self.md["colours"] = self.colours
+        self.md["is_fib_view"] = self.is_fib_view
+
+        # write the image to file
+        output_filename = write_ome_tiff(image=self.image, 
+                                         md=self.md, 
+                                         filename=filename)
+
+        self.filename = output_filename
+        self.label_import_header.setText(f"File: {os.path.basename(output_filename)}")
+        napari.utils.notifications.show_info(f"Image exported successfully to {os.path.basename(output_filename)}")
 
     def on_imaging_view(self):
         self.viewer.dims.ndisplay = 3
@@ -281,6 +307,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
 
     def open_image(self, filename: str):
         image, md = load_and_parse_fm_image(filename)
+        self.md = md # initial metadata
 
         self.filename = filename
         self.label_import_header.setText(f"File: {os.path.basename(filename)}")
