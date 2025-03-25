@@ -42,6 +42,7 @@ COORDINATE_LAYER_PROPERTIES = {
     "opacity": 0.9,
     "coordinates": {
         "FIB": {"color": "lime", "translation": 0},
+        "Surface": {"color": "red", "translation": 0},
         "FM": {"color": "cyan", "translation": None},
         "POI": {"color": "magenta", "translation": None},
     },

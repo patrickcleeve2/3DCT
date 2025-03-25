@@ -228,6 +228,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.pushButton_toggle_correlation_mode.clicked.connect(self.toggle_correlation_mode)
         self.pushButton_reset_transform.clicked.connect(self.reset_transforms)
 
+        # refractive correction
+        # mark surface (alt click?)
+        # update poi
 
     def on_method_changed(self):
 
@@ -1093,6 +1096,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         elif "Control" in event.modifiers:
             if target_layer in self.fm_image_layers:
                 self.add_point("POI", position)
+        elif "Alt" in event.modifiers:
+            if target_layer == self.fib_image_layer:
+                self.add_point("Surface", position)
 
     def add_point(self, layer: str, position: list[float], from_file: bool = False):
         logging.info(f"Adding point to layer: {layer}, Position: {position}")
