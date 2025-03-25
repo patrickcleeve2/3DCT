@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>793</width>
-    <height>953</height>
+    <width>637</width>
+    <height>1164</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,8 +25,8 @@
         <rect>
          <x>0</x>
          <y>0</y>
-         <width>748</width>
-         <height>1219</height>
+         <width>591</width>
+         <height>1363</height>
         </rect>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
@@ -424,13 +424,6 @@
              </property>
             </widget>
            </item>
-           <item row="2" column="0">
-            <widget class="QPushButton" name="pushButton_refractive_mark_surface">
-             <property name="text">
-              <string>Mark Lamella Surface</string>
-             </property>
-            </widget>
-           </item>
            <item row="2" column="1">
             <widget class="QPushButton" name="pushButton_refreactive_update_poi">
              <property name="text">
@@ -441,7 +434,10 @@
            <item row="3" column="0" colspan="2">
             <widget class="QLabel" name="label_refractive_correction_instructions">
              <property name="text">
-              <string>Press mark lamella surface to select the surface, then update point of interest to recalculate the point of interest with the correction factor.</string>
+              <string>Press Alt + Left Click to select the surface, then update point of interest to recalculate the point of interest with the correction factor.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -506,8 +502,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>793</width>
-     <height>22</height>
+     <width>637</width>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

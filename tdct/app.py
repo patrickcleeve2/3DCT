@@ -199,6 +199,11 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.spinBox_parameters_rotation_center_z.valueChanged.connect(
             self._update_parameters
         )
+        # hide these, don't allow user to change
+        self.label_parameters_rotation_center.setVisible(False)
+        self.spinBox_parameters_rotation_center_x.setVisible(False)
+        self.spinBox_parameters_rotation_center_y.setVisible(False)
+        self.spinBox_parameters_rotation_center_z.setVisible(False)
         self.doubleSpinBox_parameters_pixel_size.setSuffix(" um")
 
         # menu actions
@@ -231,6 +236,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         # refractive correction
         # mark surface (alt click?)
         # update poi
+        self.pushButton_refreactive_update_poi.clicked.connect(self.apply_refractive_index_correction)
 
     def on_method_changed(self):
 
@@ -578,27 +584,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         if not filename:
             return
 
-        # # load the fm image, set the data
-        # try:
-
-        #     dialog = FluorescenceImportDialog(path=filename, parent=self)
-        #     _ = dialog.exec_()
-            
-        #     if not dialog.accepted_image:
-        #         return 
-        #     image = dialog.fm_image
-
-        #     if image is None:
-        #         raise ValueError("No image data found")
-            
-        #     self.fm_image = image
-        #     self.fm_md = dialog.md
-        #     # fm_md: {"pixel_size": float, "zstep": float, "colours": List[str]}
-
-        # except Exception as e:
-        #     logging.error(f"Error loading FM Image: {e}")
-        #     return
-
         self.wizard = open_import_wizard(filename=filename)
         self.wizard.finished_signal.connect(self.handle_fm_finished_signal)
 
@@ -608,8 +593,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                       "zstep": data["zstep"], 
                       "colours": data["colours"]}
         filename = data["filename"]
-
-        print("SOMETHING HAPPENED")
 
         if self.fm_image.ndim == 3:
             # add a channel dimension 
@@ -814,15 +797,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             )
             return
 
-        # standard resolutions: (old), needs to be modernised
-        # standard_res = [(442, 512), (884, 1024), (1768, 2048), (3536, 4096), (7072, 8192)]
-
-        # find closest resolution
-        # res = min(standard_res, key=lambda x: abs(x[0] - fib_shape[0]))
-
-        # if fib_shape != res:
-        # print(f"Clipped to closest standard resolution: {res}")
-
         # fib image shape minus metadata, fib_pixelsize (microns), fm_image_shape
         image_props = [fib_image.shape, fib_pixel_size * 1e6, fm_image.shape]
         logging.info(f"Image Properties: {image_props}")
@@ -858,9 +832,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         for i, coord in enumerate(poi_image_coordinates):
             dat.append(coord["image_px"][::-1])
 
-            # image_px: image coordinates
+            # image_px: image coordinates (0,0) in top left
             # px: coordinates in microscope image (centre at 0,0)
-            # px_um: coordinates in microscope image (um) (centre at 0,0)
+            # px_m: coordinates in microscope image (m) (centre at 0,0)
 
         # TODO: add the results to the main dataframe?
         if self.results_layer is not None:
@@ -1028,6 +1002,69 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self.display_milling_stages()
 
+    def apply_refractive_index_correction(self):
+
+        # get surface point
+        surface_coord = self.df[self.df["type"] == "Surface"][["x", "y", "z"]].values.astype(
+            np.float32
+        )[0]
+
+        # get result point (poi)
+        poi_image_coordinates = self.correlation_results["output"]["poi"][0]["image_px"]
+        logging.info(f"Surface Coord: {surface_coord}, PoI Coord: {poi_image_coordinates}")
+
+        # get correction factor
+        correction_factor = self.doubleSpinBox_refractive_correction_factor.value()
+
+        # apply correction factor to poi
+        depth = poi_image_coordinates[1] - surface_coord[1] # assume poi always below surface
+
+        corrected_depth = depth * correction_factor
+        logging.info(f"Correction Factor: {correction_factor}, Depth: {depth}, Corrected Depth: {corrected_depth}")
+
+        # update the poi coordinate in poi
+        corrected_poi = (poi_image_coordinates[0], surface_coord[1] + corrected_depth)
+        logging.info(f"Corrected PoI: {corrected_poi}")
+
+        # show initial point 
+
+        if "Corrected PoI" in self.viewer.layers:
+            self.viewer.layers.remove("Corrected PoI")
+        self.viewer.add_points(
+            [corrected_poi[::-1]],
+            name="Corrected PoI",
+            face_color="orange",
+            size=10,
+            symbol="disc",
+            text={"text": ["Corrected PoI"], "size": 10, 
+                  "color": "white", 
+                  "anchor": "upper_right"},
+            blending="additive",
+        )
+
+        # update the poi coordinate in poi
+        # update the results dictionary, save the results
+
+        # convert to microscope coordinates
+        shape = self.fib_image.shape
+        pixelsize = self.fib_pixel_size
+        cy, cx = np.asarray(shape) // 2
+        logging.info(f"Image Information: Shape: {shape}, Pixelsize: {pixelsize}, Centre: {cy, cx}")
+
+        # distance from centre?
+        dy = float(-(corrected_poi[1] - cy)) * pixelsize    # neg = down
+        dx = float(corrected_poi[0] - cx)  * pixelsize      # neg = left
+
+        self.poi_coordinate = (dx, dy)
+        self.correlation_results["output"]["poi"][0]["image_px"] = corrected_poi
+        self.correlation_results["output"]["poi"][0]["px_m"] = self.poi_coordinate
+        self.correlation_results["output"]["poi"][0]["px_um"] = (dx*1e6, dy*1e6)
+        self.correlation_results["output"]["poi"][0]["px"] = (dx/pixelsize, dy/pixelsize)
+
+        logging.info(f"Final Results: {self.correlation_results["output"]["poi"]}")
+
+        save_correlation_data(self.correlation_results, self.path)
+
     def display_milling_stages(self):
         """Attempt to display milling stages on the correlated image."""
         try:
@@ -1067,7 +1104,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         if self.is_drag_drop:
             return # don't update points in drag-drop view
 
-        if "Control" not in event.modifiers and "Shift" not in event.modifiers:
+        if "Control" not in event.modifiers and "Shift" not in event.modifiers and "Alt" not in event.modifiers:
             return
 
         if self.fib_image is None or self.fm_image is None:
