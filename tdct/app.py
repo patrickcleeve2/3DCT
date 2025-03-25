@@ -825,7 +825,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         self._show_correlation_results(self.correlation_results)
 
-    def _show_correlation_results(self, correlation_results: dict):
+    def _show_correlation_results(self, correlation_results: dict, refresh_only: bool = False):
         # show the results on the fib image
         dat = []
         poi_image_coordinates = correlation_results["output"]["poi"]
@@ -862,6 +862,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # reset selection to coordiantes layer
         self.viewer.layers.selection.active = self.coordinates_layer
+
+        if refresh_only:
+            return
 
         self._show_results_widgets(True)
 
@@ -1028,15 +1031,21 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
         # show initial point 
 
-        if "Corrected PoI" in self.viewer.layers:
-            self.viewer.layers.remove("Corrected PoI")
+        INITIAL_POI_CONFIG = {"name": "Initial PoI", 
+                              "face_color": "blue", 
+                              "size": 10, 
+                              "symbol": "disc",}
+
+        if INITIAL_POI_CONFIG["name"] in self.viewer.layers:
+            self.viewer.layers.remove(INITIAL_POI_CONFIG["name"])
         self.viewer.add_points(
-            [corrected_poi[::-1]],
-            name="Corrected PoI",
-            face_color="orange",
-            size=10,
-            symbol="disc",
-            text={"text": ["Corrected PoI"], "size": 10, 
+            [poi_image_coordinates[::-1]],
+            name=INITIAL_POI_CONFIG["name"],
+            face_color=INITIAL_POI_CONFIG["face_color"],
+            size=INITIAL_POI_CONFIG["size"],
+            symbol=INITIAL_POI_CONFIG["symbol"],
+            text={"text": [INITIAL_POI_CONFIG["name"]], 
+                  "size": 10, 
                   "color": "white", 
                   "anchor": "upper_right"},
             blending="additive",
@@ -1061,7 +1070,10 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         self.correlation_results["output"]["poi"][0]["px_um"] = (dx*1e6, dy*1e6)
         self.correlation_results["output"]["poi"][0]["px"] = (dx/pixelsize, dy/pixelsize)
 
-        logging.info(f"Final Results: {self.correlation_results["output"]["poi"]}")
+        logging.info(f'Final Results: {self.correlation_results["output"]["poi"]}')
+
+        self._show_correlation_results(self.correlation_results, refresh_only=True)
+        self.display_milling_stages()
 
         save_correlation_data(self.correlation_results, self.path)
 
