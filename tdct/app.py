@@ -420,6 +420,9 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
             if self.fib_image_layer in self.viewer.layers:
                 self.viewer.layers.remove(self.fib_image_layer)
                 self.fib_image_layer = None
+        
+        if "Initial PoI" in self.viewer.layers:
+            self.viewer.layers.remove("Initial PoI")
 
     def handle_continue_signal(self, ddict: dict):
 
@@ -1020,7 +1023,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         correction_factor = self.doubleSpinBox_refractive_correction_factor.value()
 
         # apply correction factor to poi
-        depth = poi_image_coordinates[1] - surface_coord[1] # assume poi always below surface
+        depth = poi_image_coordinates[1] - surface_coord[1] # assume poi always below surface, y-axis
 
         corrected_depth = depth * correction_factor
         logging.info(f"Correction Factor: {correction_factor}, Depth: {depth}, Corrected Depth: {corrected_depth}")
@@ -1030,7 +1033,6 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         logging.info(f"Corrected PoI: {corrected_poi}")
 
         # show initial point 
-
         INITIAL_POI_CONFIG = {"name": "Initial PoI", 
                               "face_color": "blue", 
                               "size": 10, 
@@ -1060,7 +1062,7 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         cy, cx = np.asarray(shape) // 2
         logging.info(f"Image Information: Shape: {shape}, Pixelsize: {pixelsize}, Centre: {cy, cx}")
 
-        # distance from centre?
+        # distance from centre
         dy = float(-(corrected_poi[1] - cy)) * pixelsize    # neg = down
         dx = float(corrected_poi[0] - cx)  * pixelsize      # neg = left
 

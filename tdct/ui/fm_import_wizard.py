@@ -295,8 +295,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
                                    "colours" : self.colours,
                                    "is_fib_view": self.is_fib_view,
                                    "filename": self.filename})
-
-        self.viewer.close()
+        # self.viewer.close()
 
     def on_id_changed(self, page_id: int):
         logging.debug(f"id changed: {page_id}")
