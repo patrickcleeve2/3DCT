@@ -49,21 +49,45 @@ def parse_metadata(filename: str) -> np.ndarray:
                     md = tag.value
     return md
 
+def parse_ome_fibsem_image(filename: str) -> tuple[np.ndarray, float]:
+    """Parse OME metadata from a FibsemImage"""
+
+    image = tff.imread(filename)
+    ome = from_tiff(filename)
+    pixels_md = ome.images[0].pixels
+    pixel_size = pixels_md.physical_size_x  # assume isotropic
+    pixel_size_unit = pixels_md.physical_size_x_unit
+    pixel_size *= _unit_map[pixel_size_unit]  # convert to SI
+    return image, pixel_size
+
+def load_openfibsem_image(filename: str) -> tuple[np.ndarray, float]:
+
+    from fibsem.structures import FibsemImage
+    image = FibsemImage.load(filename)
+    image = image.data
+    pixel_size = None
+    pixel_size = image.metadata.pixel_size.x
+
+    return image, pixel_size
+
 def load_image_and_metadata(filename: str) -> tuple[np.ndarray, dict]:
     # TODO: convert to FIBSEMImage always, require the package...
     try:
-        from fibsem.structures import FibsemImage
-        image = FibsemImage.load(filename)
-        pixel_size = image.metadata.pixel_size.x
-        image = image.data
+        image, pixel_size = parse_ome_fibsem_image(filename)
     except Exception as e:
-        logging.debug(f"Failed to load as FibsemImage: {e}")
+        logging.debug(f"Failed to load as OME Image: {e}")
 
         try:
-            image, pixel_size = load_tfs_image(filename)
+            image, pixel_size = load_openfibsem_image(filename)
         except Exception as e:
-            logging.error(f"Failed to load as TFS image: {e}")
-            return None, None
+            logging.debug(f"Failed to load as OpenFIBSEM Image: {e}")
+            try:
+                image, pixel_size = load_tfs_image(filename)
+            except Exception as e:
+                logging.error(f"Failed to load as TFS image: {e}")
+                image = tff.imread(filename)
+                pixel_size = None
+                return None, None
 
     return image, pixel_size
 

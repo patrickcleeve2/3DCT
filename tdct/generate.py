@@ -57,17 +57,28 @@ def acquire_fib_view_screenshots(viewer: napari.Viewer) -> list[np.ndarray]:
         list[np.ndarray]: list of fib-view array views"""
     
     layers: List[NapariImageLayer] = viewer.layers
-    cmaps = [l.colormap for l in layers]
+    cmaps = []
+    for l in layers:
+        if isinstance(l, NapariImageLayer):
+            # store original colormap
+            cmaps.append(l.colormap)
+        else:
+            cmaps.append("gray")
     arrs = []
     viewer.scale_bar.visible = False
     for layer in layers:
+        if not isinstance(layer, NapariImageLayer):
+            continue
         # set all layers to invisible
         for l in layers:
-            l.visible = False
+            if isinstance(l, NapariImageLayer):
+                l.visible = False
 
         # set current layer to visible
         layer.visible = True
-        layer.colormap = "gray"
+        if isinstance(layer, NapariImageLayer):
+            # set colormap to gray for screenshot
+            layer.colormap = "gray"
         sc = viewer.screenshot()
 
         # convert from RGb to float32
@@ -82,7 +93,9 @@ def acquire_fib_view_screenshots(viewer: napari.Viewer) -> list[np.ndarray]:
     viewer.scale_bar.visible = True 
     for i, l in enumerate(layers):
         l.visible = True
-        l.colormap = cmaps[i]
+        if isinstance(l, NapariImageLayer):
+            # restore original colormap
+            l.colormap = cmaps[i]
 
     # viewer.close()
 

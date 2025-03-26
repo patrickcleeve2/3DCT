@@ -106,6 +106,11 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
 
         if colours is None:
             colours = ["gray"] * image.shape[0]
+        if pixelsize is None:
+            pixelsize = 154e-9
+        if zstep is None:
+            zstep = 500e-9
+
         self.colours = colours
         self.pixelsize = pixelsize
         self.zstep = zstep
@@ -185,7 +190,7 @@ class FMImportWizard(tdct_wizard.Ui_Wizard, QtWidgets.QWizard):
         self.viewer.dims.ndisplay = 3
         rotation = self.doubleSpinBox_rotation_x.value()                    # deg
         milling_angle = self.doubleSpinBox_milling_angle.value()            # deg
-        self.viewer.camera.angles = (np.cos(rotation), 0, milling_angle)
+        self.viewer.camera.angles = (np.cos(np.radians(rotation)), 0, 90+52+35-milling_angle)
         # TODO: display the stage-tilt, based off pre-tilt calculation
 
     def confirm_fib_view(self):

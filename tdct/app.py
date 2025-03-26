@@ -1067,17 +1067,27 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
         dx = float(corrected_poi[0] - cx)  * pixelsize      # neg = left
 
         self.poi_coordinate = (dx, dy)
-        self.correlation_results["output"]["poi"][0]["image_px"] = corrected_poi
-        self.correlation_results["output"]["poi"][0]["px_m"] = self.poi_coordinate
-        self.correlation_results["output"]["poi"][0]["px_um"] = (dx*1e6, dy*1e6)
-        self.correlation_results["output"]["poi"][0]["px"] = (dx/pixelsize, dy/pixelsize)
+        self.correlation_results["output"]["poi"][0]["image_px"] = [float(corrected_poi[0]), float(corrected_poi[1])]
+        self.correlation_results["output"]["poi"][0]["px_m"] = list(self.poi_coordinate)
+        self.correlation_results["output"]["poi"][0]["px_um"] = [dx*1e6, dy*1e6]
+        self.correlation_results["output"]["poi"][0]["px"] = [dx/pixelsize, dy/pixelsize]
 
         logging.info(f'Final Results: {self.correlation_results["output"]["poi"]}')
 
         self._show_correlation_results(self.correlation_results, refresh_only=True)
         self.display_milling_stages()
 
-        save_correlation_data(self.correlation_results, self.path)
+        full_correlation_data = {
+            "metadata": {
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+                "data_path": self.path,
+                "csv_path": os.path.join(self.path, "data.csv"),
+                "project_path": self.path, # TODO: add project path
+            },
+            "correlation": self.correlation_results,
+        }
+
+        save_correlation_data(full_correlation_data, self.path)
 
     def display_milling_stages(self):
         """Attempt to display milling stages on the correlated image."""
