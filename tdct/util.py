@@ -67,6 +67,39 @@ def fit_guass1d(data: np.ndarray, show: bool = False) -> Tuple[np.ndarray, np.nd
 
     return popt, pcov
 
+def fit_gauss1d_mod(data: np.ndarray, show: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """Fit a 1D Gaussian to the data. Modified for negative hole images
+    Args:
+        data: 1D numpy array
+        show: show the plot of the fit (for debugging)
+    Returns:
+        popt: optimal parameters
+        pcov: covariance matrix
+    """
+
+    z=data
+    xz=np.arange(z.shape[0])
+    offset=np.max(z)
+    z-=offset # shift data to 0
+
+    p0=[np.min(z)-offset,np.argmin(z),5,offset]
+
+    popt, pcov = curve_fit(gauss1d_offset, xz, z, p0, maxfev=10000)
+
+    # plot the data and the fit
+    if show:
+        import matplotlib.pyplot as plt
+        plt.title("1D Gaussian fit")
+        plt.plot(data, label="Data")
+        plt.plot(gauss1d(x, *popt), label="Gaussian 1D fit")
+        plt.legend()
+        plt.show()
+
+    return popt, pcov
+
+def gauss1d_offset(x, a, x0, sigma, offset):
+    return a*np.exp(-(x-x0)**2/(2*sigma**2)) + offset
+
 def gauss1d(x: np.ndarray, A: float, mu: float, sigma: float) -> float:
     """Gaussian 1D fit
     Args:
@@ -80,6 +113,23 @@ def gauss1d(x: np.ndarray, A: float, mu: float, sigma: float) -> float:
     return A * np.exp(-((x - mu) ** 2) / (2.0 * sigma**2))
 
 ##### 2D GAUSSIAN FIT #####
+
+def gauss2d_offset(coords, a, x0, y0, sigma_x, sigma_y, offset):
+    x, y = coords  # unpack the coordinates
+    return a * np.exp(-(((x - x0)**2) / (2 * sigma_x**2) + ((y - y0)**2) / (2 * sigma_y**2))) + offset
+
+def fit_gauss_2d_mod(slc: np.ndarray, show: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    y_indices, x_indices = np.indices(slc.shape)
+    # Flatten the coordinate arrays and the slice data for fitting.
+    x_data = x_indices.ravel()
+    y_data = y_indices.ravel()
+    slc_data = slc.ravel()
+    
+    # define initial guess
+    p0 = [float(np.min(slc)) - float(np.max(slc)), slc.shape[1] / 2, slc.shape[0] / 2, 1, 1, np.max(slc)]
+
+    popt, pcov = curve_fit(gauss2d_offset, (x_data, y_data), slc_data, p0=p0, maxfev=10000)
+    return popt, pcov
 
 ## Gaussian 2D fit from http://scipy.github.io/old-wiki/pages/Cookbook/FittingData
 def gaussian(height, center_x, center_y, width_x, width_y):
@@ -313,6 +363,61 @@ def multi_channel_get_z_guass(image: np.ndarray, x: int, y: int, show: bool = Fa
     ch_idx = np.argmax(vals[:, 0])
 
     return vals[ch_idx] # zval, zidx, zsigma
+
+def hole_fitting_RL(img: np.ndarray,
+    x: int,
+    y: int,
+    z: int,
+    cutout: int = 15,
+    small_cutout: int = 6,
+    apply_threshold: bool = False,
+    threshold_val: float = 0,
+    iterations: int = 5,
+):
+    """refine selection of hole in reflected light image
+    Args:
+        img: 3D numpy array (Z,Y,X), interpolated to isotropic pixel size
+        x,y,z initial coordinates from the user click
+        cutout: size of the cutout around the point in x,y. z uses 3x this value
+        small_cutout: size of the cutout for the refined fit. z uses 3x this value
+        apply_threshold: apply thresholding to the image
+        threshold_val: does nothing
+        iterations: number of iterations    
+    """
+    # cut out the box
+    ROI=img[z-cutout*3:z+cutout*3,y-cutout:y+cutout,x-cutout:x+cutout]
+    # fit a gaussian to estimate the in focus plane
+    I=np.mean(ROI,axis=(1,2))
+    popt,popcov=fit_gauss1d_mod(I,show=False)
+    zi=int(popt[1])
+    
+    # fit a 2D gaussian to the in focus plane to get rough poition
+    slc=img[zi,y-cutout:y+cutout,x-cutout:x+cutout]
+
+    popt,popcov=fit_gauss_2d_mod(slc,show=False)
+    # get the rough position in the coordinates of the original image
+    xi=int(popt[1])+x-cutout
+    yi=int(popt[2])+y-cutout
+    zi=zi+z-cutout*3
+
+    # refine the estimates
+    # cut out a smaller box
+    ROI=img[zi-small_cutout*3:zi+small_cutout*3,yi-small_cutout:yi+small_cutout,xi-small_cutout:xi+small_cutout]
+    
+    # fit a gaussian to estimate the in focus plane
+    I=np.mean(ROI,axis=(1,2))
+    popt,popcov=fit_gauss1d_mod(I,show=False)
+    zr=popt[1]
+
+    # fit a 2D gaussian to the in focus plane to get rough poition
+    slc=img[int(zr),yi-small_cutout:yi+small_cutout,xi-small_cutout:xi+small_cutout]
+    popt,popcov=fit_gauss_2d_mod(slc,show=False)
+    # get the refined positions in the coordinates of the original image
+    xr=int(popt[1])+xi-small_cutout
+    yr=int(popt[2])+yi-small_cutout
+    zr=int(zr)+zi-small_cutout*3
+
+    return xr,yr,zr
 
 def zyx_targeting(
     img: np.ndarray,
