@@ -382,7 +382,9 @@ def hole_fitting_RL(img: np.ndarray,
         small_cutout: size of the cutout for the refined fit. z uses 3x this value
         apply_threshold: apply thresholding to the image
         threshold_val: does nothing
-        iterations: number of iterations    
+        iterations: does nothing
+    Returns:
+        xr, yr, zr: refined x, y, z coordinates
     """
     # cut out the box
     ROI=img[z-cutout*3:z+cutout*3,y-cutout:y+cutout,x-cutout:x+cutout]
@@ -418,6 +420,29 @@ def hole_fitting_RL(img: np.ndarray,
     zr=int(zr)+zi-small_cutout*3
 
     return xr,yr,zr
+
+def hole_fitting_FIB(img: np.ndarray,
+    x: int,
+    y: int,
+    cutout: int = 15,
+):
+    """refine selection of hole in FIB image
+    Args:
+        img: 2D numpy array (X,Y)
+        x,y initial coordinates from the user click
+        cutout: size of the cutout around the point in x,y
+    Returns:
+        xr, yr: refined x, y coordinates
+    """
+    # cut out a box around the point
+    ROI=img[y-cutout:y+cutout,x-cutout:x+cutout]
+    # fit a 2D gaussian to estimate the hole position
+    popt,popcov=fit_gauss_2d_mod(ROI,show=False)
+    # get the refined positions in the coordinates of the original image
+    xr=int(popt[1])+x-cutout
+    yr=int(popt[2])+y-cutout
+    
+    return xr,yr
 
 def zyx_targeting(
     img: np.ndarray,
