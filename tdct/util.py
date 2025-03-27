@@ -368,12 +368,14 @@ def hole_fitting_RL(img: np.ndarray,
     x: int,
     y: int,
     z: int,
-    cutout: int = 15,
-    small_cutout: int = 6,
+    cutout: int = 11,
+    small_cutout: int = 5,
     apply_threshold: bool = False,
     threshold_val: float = 0,
     iterations: int = 5,
+    show: bool = False,
 ):
+    import matplotlib.pyplot as plt
     """refine selection of hole in reflected light image
     Args:
         img: 3D numpy array (Z,Y,X), interpolated to isotropic pixel size
@@ -388,36 +390,50 @@ def hole_fitting_RL(img: np.ndarray,
     """
     # cut out the box
     ROI=img[z-cutout*3:z+cutout*3,y-cutout:y+cutout,x-cutout:x+cutout]
-    # fit a gaussian to estimate the in focus plane
-    I=np.mean(ROI,axis=(1,2))
-    popt,popcov=fit_gauss1d_mod(I,show=False)
-    zi=int(popt[1])
+    # # fit a gaussian to estimate the in focus plane
+    # I=np.mean(ROI,axis=(1,2))
+    # popt,popcov=fit_gauss1d_mod(I,show=False)
+    # zi=int(popt[1])+z-cutout*3
+    # if show:
+    #     plt.figure()
+    #     plt.plot(I)
+    #     plt.scatter(popt[1],popt[2],color='r')
+    #     plt.show()
     
     # fit a 2D gaussian to the in focus plane to get rough poition
-    slc=img[zi,y-cutout:y+cutout,x-cutout:x+cutout]
-
+    # slc=img[zi,y-cutout:y+cutout,x-cutout:x+cutout]
+    slc=img[z,y-cutout:y+cutout,x-cutout:x+cutout]
     popt,popcov=fit_gauss_2d_mod(slc,show=False)
     # get the rough position in the coordinates of the original image
     xi=int(popt[1])+x-cutout
     yi=int(popt[2])+y-cutout
-    zi=zi+z-cutout*3
-
+    if show:
+        plt.figure()
+        plt.imshow(slc)
+        plt.scatter(popt[1],popt[2],color='r')
+        plt.show()
+    zi=z
     # refine the estimates
     # cut out a smaller box
     ROI=img[zi-small_cutout*3:zi+small_cutout*3,yi-small_cutout:yi+small_cutout,xi-small_cutout:xi+small_cutout]
-    
+
     # fit a gaussian to estimate the in focus plane
     I=np.mean(ROI,axis=(1,2))
     popt,popcov=fit_gauss1d_mod(I,show=False)
-    zr=popt[1]
+    zr=popt[1]+zi-small_cutout*3
 
     # fit a 2D gaussian to the in focus plane to get rough poition
     slc=img[int(zr),yi-small_cutout:yi+small_cutout,xi-small_cutout:xi+small_cutout]
     popt,popcov=fit_gauss_2d_mod(slc,show=False)
     # get the refined positions in the coordinates of the original image
-    xr=int(popt[1])+xi-small_cutout
-    yr=int(popt[2])+yi-small_cutout
-    zr=int(zr)+zi-small_cutout*3
+    xr=popt[1]+xi-small_cutout
+    yr=popt[2]+yi-small_cutout
+
+    if show:
+        plt.figure()
+        plt.imshow(slc)
+        plt.scatter(popt[1],popt[2],color='r')
+        plt.show()
 
     return xr,yr,zr
 
