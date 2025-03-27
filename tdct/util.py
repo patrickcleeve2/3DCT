@@ -421,6 +421,11 @@ def hole_fitting_RL(img: np.ndarray,
     I=np.mean(ROI,axis=(1,2))
     popt,popcov=fit_gauss1d_mod(I,show=False)
     zr=popt[1]+zi-small_cutout*3
+    if show:
+        plt.figure()
+        plt.plot(I)
+        plt.axvline(popt[1],color='r')
+        plt.show()
 
     # fit a 2D gaussian to the in focus plane to get rough poition
     slc=img[int(zr),yi-small_cutout:yi+small_cutout,xi-small_cutout:xi+small_cutout]
@@ -441,7 +446,9 @@ def hole_fitting_FIB(img: np.ndarray,
     x: int,
     y: int,
     cutout: int = 15,
+    show: bool = False,
 ):
+    import matplotlib.pyplot as plt
     """refine selection of hole in FIB image
     Args:
         img: 2D numpy array (X,Y)
@@ -455,8 +462,14 @@ def hole_fitting_FIB(img: np.ndarray,
     # fit a 2D gaussian to estimate the hole position
     popt,popcov=fit_gauss_2d_mod(ROI,show=False)
     # get the refined positions in the coordinates of the original image
-    xr=int(popt[1])+x-cutout
-    yr=int(popt[2])+y-cutout
+    xr=popt[1]+x-cutout
+    yr=popt[2]+y-cutout
+
+    if show:
+        plt.figure()
+        plt.imshow(ROI)
+        plt.scatter(popt[1],popt[2],color='r')
+        plt.show()
     
     return xr,yr
 
