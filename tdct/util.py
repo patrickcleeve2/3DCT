@@ -541,6 +541,7 @@ def multi_channel_zyx_targeting(
     image: np.ndarray,
     xinit: int,
     yinit: int,
+    zinit: int,
     apply_threshold: bool = False,
     threshold_val: float = 0.1,
     cutout: int = 15,
@@ -582,10 +583,20 @@ def multi_channel_zyx_targeting(
     for i in range(image.shape[0]):
         ch_image = image[i]
         try:
-            x1, y1, (zv, z1, zs) = zyx_targeting(
+            # x1, y1, (zv, z1, zs) = zyx_targeting(
+            #     ch_image,
+            #     xinit,
+            #     yinit,
+            #     cutout=cutout,
+            #     apply_threshold=apply_threshold,
+            #     threshold_val=threshold_val,
+            #     iterations=iterations,
+            # )
+            x1, y1, zv = hole_fitting_RL(
                 ch_image,
                 xinit,
                 yinit,
+                zinit,
                 cutout=cutout,
                 apply_threshold=apply_threshold,
                 threshold_val=threshold_val,
@@ -594,11 +605,14 @@ def multi_channel_zyx_targeting(
         except Exception as e:
             logging.error(f"an error occured during channel {i}: {e}")
             x1, y1, zv, z1, zs = xinit, yinit, 0, None, None
-        zvalues.append((zv, z1, zs))
-        xyz_vals.append((x1, y1, z1))
+        # zvalues.append((zv, z1, zs))
+        # xyz_vals.append((x1, y1, z1))
+        break
 
-    vals = np.array(zvalues).astype(np.float32)
-    ch_idx = np.argmax(vals[:, 0])
+    return 0, (x1, y1, zv)
 
-    logging.info(f"solution found: Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
-    return ch_idx, xyz_vals[ch_idx]
+    # vals = np.array(zvalues).astype(np.float32)
+    # ch_idx = np.argmax(vals[:, 0])
+
+    # logging.info(f"solution found: Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
+    # return ch_idx, xyz_vals[ch_idx]

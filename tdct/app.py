@@ -1190,12 +1190,12 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
 
             try:
                 # getzGauss can fail, so we need to catch the exception
-                zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
-                logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
+                # zval, z, _ = multi_channel_get_z_guass(image=self.fm_image, x=x, y=y) # TODO: indicate to user which channel is being used
+                # logging.info(f"Using Z-Gauss optimisation: {z}, previous z: {prev_z}")
                 
                 # TODO: enable after more thorough testing
                 # logging.info(f"Using multi-channel zyx-targeting")
-                # ch, (x,y,z) = multi_channel_zyx_targeting(self.fm_image, x, y)
+                ch, (x,y,z) = multi_channel_zyx_targeting(self.fm_image, int(x), int(y), int(z))
                 
                 if z is None:
                     raise RuntimeError("Z-Gauss optimisation failed: optimisation failed")
@@ -1216,6 +1216,10 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                 )
                 z = prev_z
                 x, y = prev_x, prev_y
+
+        if layer == "FIB" and self.use_z_gauss_optim and not from_file:
+            from tdct.util import hole_fitting_FIB
+            x, y = hole_fitting_FIB(img=self.fib_image, x=int(x), y=int(y))
 
         # add the point to the dataframe
         df_tmp = pd.DataFrame([{"x": x,"y": y, "z": z, 
