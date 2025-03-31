@@ -616,3 +616,29 @@ def multi_channel_zyx_targeting(
 
     # logging.info(f"solution found: Channel Index: {ch_idx}: xyz: {xyz_vals[ch_idx]}")
     # return ch_idx, xyz_vals[ch_idx]
+
+def apply_refractive_index_correction(
+    initial_poi: Tuple[float, float],
+    surface_coord: Tuple[float, float],
+    correction_factor: float,
+) -> Tuple[float, float]:
+    """Apply a refractive index correction to the point of interest (POI) coordinates.
+    Initial point of interest and surface coordinate are both in image pixels
+    Args:
+        initial_poi: initial point of interest coordinates (x, y)
+        surface_coord: surface coordinate (x, y)
+        correction_factor: correction factor for the refractive index
+    Returns:
+        corrected_poi: corrected point of interest coordinates (x, y)"""
+
+    # apply correction factor to poi
+    depth = initial_poi[1] - surface_coord[1]  # assume poi always below surface, y-axis
+
+    corrected_depth = depth * correction_factor
+    logging.info(
+        f"Correction Factor: {correction_factor}, Depth: {depth}, Corrected Depth: {corrected_depth}"
+    )
+
+    # update the poi coordinate in poi
+    corrected_poi = (initial_poi[0], surface_coord[1] + corrected_depth)
+    return corrected_poi
