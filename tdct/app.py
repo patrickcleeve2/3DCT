@@ -410,7 +410,8 @@ class CorrelationUI(tdct_main.Ui_MainWindow, QtWidgets.QMainWindow):
                 self.viewer.layers.remove(self.coordinates_layer)
                 self.coordinates_layer = None
 
-        self.viewer.layers.unlink_layers(self.fm_image_layers) 
+        if self.fm_image_layers:
+            self.viewer.layers.unlink_layers(self.fm_image_layers) 
         for layer in self.fm_image_layers:
             if layer in self.viewer.layers:
                 self.viewer.layers.remove(layer)
